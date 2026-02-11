@@ -58,6 +58,10 @@ Errors are shown in red:
   ```
   ollama pull qwen2.5-coder:7b
   ```
+- An [Ollama API key](https://ollama.com/settings/keys) (free) — required for `web_search` and `web_fetch` tools. Set it as `OLLAMA_API_KEY` in your environment:
+  ```
+  export OLLAMA_API_KEY=your-key-here
+  ```
 
 ## Install
 
@@ -119,8 +123,8 @@ The agent has access to the following tools:
 | `list_files` | Glob-based file and directory listing |
 | `shell` | Execute shell commands (builds, tests, git, etc.) |
 | `grep` | Regex search across files with line numbers |
-| `web_search` | Search the web via DuckDuckGo (no API key needed) |
-| `web_fetch` | Fetch a URL and return its content as readable text |
+| `web_search` | Search the web via [Ollama's web search API](https://docs.ollama.com/capabilities/web-search) |
+| `web_fetch` | Fetch a URL and return its content via [Ollama's web fetch API](https://docs.ollama.com/capabilities/web-search) |
 | `ask_user` | Ask the user a clarifying question and wait for a response |
 
 The model decides which tools to call and when. It will loop — calling tools and feeding results back in — until it produces a final text response.
@@ -154,8 +158,8 @@ src/
     ├── list_files.js     Glob-based file listing
     ├── shell.js          Shell command execution
     ├── grep.js           Regex search across files
-    ├── web_search.js     DuckDuckGo web search
-    ├── web_fetch.js      Fetch and extract text from URLs
+    ├── web_search.js     Web search via Ollama API
+    ├── web_fetch.js      URL fetch via Ollama API
     └── ask_user.js       Ask the user for clarification
 ```
 

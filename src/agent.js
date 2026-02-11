@@ -10,8 +10,8 @@ import "./tools/edit_file.js";
 import "./tools/list_files.js";
 import "./tools/shell.js";
 import "./tools/grep.js";
-import "./tools/web_search.js";
-import "./tools/web_fetch.js";
+import { setOllamaClient as setSearchClient } from "./tools/web_search.js";
+import { setOllamaClient as setFetchClient } from "./tools/web_fetch.js";
 import "./tools/ask_user.js";
 
 const SYSTEM_PROMPT = `You are smol-agent, an expert coding assistant that runs in the user's terminal. You help users build, debug, refactor, and understand code by combining your knowledge with direct access to their project through tools.
@@ -45,8 +45,8 @@ const SYSTEM_PROMPT = `You are smol-agent, an expert coding assistant that runs 
 - If a command might be slow or dangerous, use ask_user first to confirm.
 
 ### Web search
-- Use \`web_search\` to look up documentation, error messages, library APIs, or anything you don't already know. It searches DuckDuckGo and returns titles, URLs, and snippets.
-- Use \`web_fetch\` to read a specific web page — documentation, blog post, API reference, etc. Pass a URL from web_search results or one the user provides.
+- Use \`web_search\` to look up documentation, error messages, library APIs, or anything you don't already know. It uses Ollama's web search API and returns titles, URLs, and content snippets.
+- Use \`web_fetch\` to read a specific web page — documentation, blog post, API reference, etc. It uses Ollama's web fetch API and returns the page title and content as readable text. Pass a URL from web_search results or one the user provides.
 - Prefer web_search + web_fetch over guessing when you're unsure about a library's API, a language feature, or an error message you haven't seen before.
 
 ### Asking the user
@@ -76,6 +76,10 @@ export class Agent extends EventEmitter {
     this.messages = [];
     this.running = false;
     this._initialized = false;
+
+    // Give the web tools access to the Ollama client
+    setSearchClient(this.client);
+    setFetchClient(this.client);
   }
 
   /**
