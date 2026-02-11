@@ -4,6 +4,52 @@ A small coding agent that runs in your terminal, powered by [Ollama](https://oll
 
 smol-agent gives a local language model the tools it needs to read, write, and edit code, run shell commands, search across a codebase, and ask you for clarification when it gets stuck — all wrapped in a colorful [Ink](https://github.com/vadimdemedes/ink)-based terminal UI.
 
+## What it looks like
+
+```
+ smol-agent (model: qwen2.5-coder:7b)
+
+ you> add error handling to the /users endpoint
+
+   [tool] list_files(pattern: src/**)
+   [tool] read_file(path: src/routes/users.js)
+   [tool] edit_file(path: src/routes/users.js, old_string: const users = db.q...)
+ ⠋ thinking...
+```
+
+Once the agent finishes its tool-call loop, it prints a response:
+
+```
+ smol-agent (model: qwen2.5-coder:7b)
+
+ you> add error handling to the /users endpoint
+
+   [tool] list_files(pattern: src/**)
+   [tool] read_file(path: src/routes/users.js)
+   [tool] edit_file(path: src/routes/users.js, old_string: const users = db.q...)
+
+ agent> Done. I wrapped the database query in a try/catch and added a 500
+        response with a JSON error body. The endpoint now returns
+        { "error": "Internal server error" } on failure.
+
+ you> █
+```
+
+When the agent needs clarification, it asks inline and waits for your answer:
+
+```
+ Agent asks: There are two /users endpoints (in routes/users.js and
+ routes/admin.js). Which one should I update?
+
+ answer> █
+```
+
+Errors are shown in red:
+
+```
+ error: connect ECONNREFUSED 127.0.0.1:11434
+```
+
 ## Prerequisites
 
 - **Node.js** >= 18
