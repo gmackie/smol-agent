@@ -1,22 +1,22 @@
-import readline from "node:readline";
 import { register } from "./registry.js";
 
-function prompt(question) {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stderr, // use stderr so stdout stays clean for piping
-  });
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer);
-    });
-  });
+// The ask_user tool resolves through a callback that the UI layer sets.
+// When the agent calls ask_user, it emits a pending question; the UI
+// collects the answer and resolves the promise via setAskHandler.
+
+let _askHandler = null;
+
+/**
+ * The UI layer calls this once to install its handler.
+ * handler: (question: string) => Promise<string>
+ */
+export function setAskHandler(handler) {
+  _askHandler = handler;
 }
 
 register("ask_user", {
   description:
-    "Ask the user a question and wait for their response. Use this when you need clarification, want to confirm a destructive action, or need the user to choose between options. The question is displayed to the user in the terminal and their typed response is returned.",
+    "Ask the user a question and wait for their response. Use this when you need clarification, want to confirm a destructive action, or need the user to choose between options.",
   parameters: {
     type: "object",
     required: ["question"],
@@ -28,7 +28,10 @@ register("ask_user", {
     },
   },
   async execute({ question }) {
-    const answer = await prompt(`\n🤖 Agent asks: ${question}\n> `);
+    if (!_askHandler) {
+      return { answer: "(no UI handler registered — cannot ask user)" };
+    }
+    const answer = await _askHandler(question);
     return { answer: answer.trim() };
   },
 });

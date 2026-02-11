@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import * as ollama from "./ollama.js";
 import * as registry from "./tools/registry.js";
 
@@ -21,73 +22,85 @@ Guidelines:
 - Keep your responses concise and focused.
 - When you are done with a task, summarize what you did.`;
 
-export class Agent {
+export class Agent extends EventEmitter {
   constructor({ host, model } = {}) {
+    super();
     this.client = ollama.createClient(host);
     this.model = model || ollama.DEFAULT_MODEL;
     this.messages = [{ role: "system", content: SYSTEM_PROMPT }];
+    this.running = false;
   }
 
   /**
    * Send a user message and run the full tool-call loop until the model
    * produces a final text response (no more tool calls).
+   *
+   * Emits:
+   *   "tool_call"  — { name, args }           when the model invokes a tool
+   *   "tool_result" — { name, result }         after a tool finishes
+   *   "response"   — { content }               final assistant text
+   *   "error"      — Error                     on failure
    */
   async run(userMessage) {
+    this.running = true;
     this.messages.push({ role: "user", content: userMessage });
 
     const tools = registry.ollamaTools();
     let iterations = 0;
     const MAX_ITERATIONS = 25;
 
-    while (iterations < MAX_ITERATIONS) {
-      iterations++;
+    try {
+      while (iterations < MAX_ITERATIONS) {
+        iterations++;
 
-      const response = await ollama.chat(
-        this.client,
-        this.model,
-        this.messages,
-        tools
-      );
+        const response = await ollama.chat(
+          this.client,
+          this.model,
+          this.messages,
+          tools
+        );
 
-      const msg = response.message;
-      this.messages.push(msg);
+        const msg = response.message;
+        this.messages.push(msg);
 
-      // If no tool calls, we're done — return the text response.
-      if (!msg.tool_calls || msg.tool_calls.length === 0) {
-        return msg.content;
+        // If no tool calls, we're done — return the text response.
+        if (!msg.tool_calls || msg.tool_calls.length === 0) {
+          this.running = false;
+          this.emit("response", { content: msg.content });
+          return msg.content;
+        }
+
+        // Process each tool call
+        for (const toolCall of msg.tool_calls) {
+          const name = toolCall.function.name;
+          const args = toolCall.function.arguments;
+
+          this.emit("tool_call", { name, args });
+
+          const result = await registry.execute(name, args);
+
+          this.emit("tool_result", { name, result });
+
+          this.messages.push({
+            role: "tool",
+            content: JSON.stringify(result),
+          });
+        }
       }
 
-      // Process each tool call
-      for (const toolCall of msg.tool_calls) {
-        const name = toolCall.function.name;
-        const args = toolCall.function.arguments;
-
-        process.stderr.write(`  [tool] ${name}(${summarizeArgs(args)})\n`);
-
-        const result = await registry.execute(name, args);
-
-        this.messages.push({
-          role: "tool",
-          content: JSON.stringify(result),
-        });
-      }
+      this.running = false;
+      const limitMsg = "(Agent reached maximum iteration limit)";
+      this.emit("response", { content: limitMsg });
+      return limitMsg;
+    } catch (err) {
+      this.running = false;
+      this.emit("error", err);
+      throw err;
     }
-
-    return "(Agent reached maximum iteration limit)";
   }
 
   /** Reset conversation history (keeps system prompt). */
   reset() {
     this.messages = [this.messages[0]];
   }
-}
-
-function summarizeArgs(args) {
-  if (!args) return "";
-  const parts = [];
-  for (const [k, v] of Object.entries(args)) {
-    const s = typeof v === "string" ? v : JSON.stringify(v);
-    parts.push(`${k}: ${s.length > 60 ? s.slice(0, 57) + "..." : s}`);
-  }
-  return parts.join(", ");
 }
