@@ -14,59 +14,93 @@ import { setOllamaClient as setSearchClient } from "./tools/web_search.js";
 import { setOllamaClient as setFetchClient } from "./tools/web_fetch.js";
 import "./tools/ask_user.js";
 
-const SYSTEM_PROMPT = `You are smol-agent, an expert coding assistant that runs in the user's terminal. You help users build, debug, refactor, and understand code by combining your knowledge with direct access to their project through tools.
+/**
+ * Attempt to extract tool calls from the assistant's text content.
+ * Some models output tool calls as JSON in their content instead of using
+ * Ollama's native tool_calls field. We look for JSON objects that match
+ * the pattern: {"name": "...", "arguments": {...}}
+ */
+function parseToolCallsFromContent(content) {
+  if (!content) return [];
 
-## Core workflow
+  const calls = [];
+  // Match JSON objects that look like tool calls — may appear in ```json blocks or inline
+  const jsonBlockRe = /```(?:json)?\s*\n?([\s\S]*?)\n?```/g;
+  const candidates = [];
 
-1. **Understand first.** Before making any changes, make sure you understand the request and the relevant code. Use list_files and grep to orient yourself. Read files that you plan to modify.
-2. **Plan before acting.** For multi-step tasks, think through the sequence of changes needed. If the approach is ambiguous or risky, use ask_user to confirm before proceeding.
-3. **Make changes carefully.** Use the tools to edit files precisely. Verify your changes make sense in context.
-4. **Verify when possible.** After making changes, run relevant tests or build commands with the shell tool if the project has them.
-5. **Summarize what you did.** When you're done, briefly explain the changes you made and why.
+  let match;
+  while ((match = jsonBlockRe.exec(content)) !== null) {
+    candidates.push(match[1].trim());
+  }
 
-## Tool usage rules
+  // Also try to find bare JSON objects with "name" and "arguments" keys
+  // (some models output them without code fences)
+  const bareJsonRe = /\{[^{}]*"name"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:\s*\{[^}]*\}[^}]*\}/g;
+  while ((match = bareJsonRe.exec(content)) !== null) {
+    candidates.push(match[0].trim());
+  }
 
-### Reading and navigating
-- Use \`list_files\` to explore project structure before diving into specific files. Start with a broad pattern like \`**/*\` or \`src/**\` to get oriented.
-- Use \`grep\` to find definitions, usages, imports, and patterns across the codebase. This is faster than reading every file.
-- Use \`read_file\` to read a file's contents. Always read a file before you edit it — you need the exact text for edit_file's old_string parameter.
-- Use \`read_file\` with offset/limit for large files — read the relevant section rather than the entire file.
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed.name && typeof parsed.name === "string" && parsed.arguments && typeof parsed.arguments === "object") {
+        calls.push({
+          function: {
+            name: parsed.name,
+            arguments: parsed.arguments,
+          },
+        });
+      }
+    } catch {
+      // Not valid JSON or wrong shape — skip
+    }
+  }
 
-### Writing and editing
-- **Prefer \`edit_file\` over \`write_file\`** for modifying existing files. edit_file does a targeted find-and-replace, which is safer than overwriting the whole file.
-- The \`old_string\` in edit_file must match the file contents **exactly**, including indentation and whitespace. Copy it precisely from the read_file output (without the line numbers).
-- Use \`write_file\` only when creating new files or when the entire file needs to be rewritten.
-- Preserve the existing code style — indentation (tabs vs spaces), quote style, trailing commas, etc. Match what's already there.
-- Do not add unrelated changes. If you are asked to fix a bug, fix that bug — don't also refactor surrounding code or add comments.
+  return calls;
+}
 
-### Shell commands
-- Use \`shell\` for running builds, tests, linters, git commands, package installs, and any other CLI operations.
-- Keep commands focused and non-destructive. Avoid commands that delete data or have irreversible side effects unless the user explicitly asked for that.
-- If a command might be slow or dangerous, use ask_user first to confirm.
+const SYSTEM_PROMPT = `You are smol-agent, a coding assistant that runs in the user's terminal. You have direct access to the user's project through tools. Your job is to **do the work**, not describe it.
 
-### Web search
-- Use \`web_search\` to look up documentation, error messages, library APIs, or anything you don't already know. It uses Ollama's web search API and returns titles, URLs, and content snippets.
-- Use \`web_fetch\` to read a specific web page — documentation, blog post, API reference, etc. It uses Ollama's web fetch API and returns the page title and content as readable text. Pass a URL from web_search results or one the user provides.
-- Prefer web_search + web_fetch over guessing when you're unsure about a library's API, a language feature, or an error message you haven't seen before.
+## Golden rule
 
-### Asking the user
-- Use \`ask_user\` when the request is ambiguous and you could reasonably interpret it multiple ways.
-- Use \`ask_user\` when you need to confirm a destructive or hard-to-reverse action (deleting files, overwriting data, force-pushing, etc.).
-- Use \`ask_user\` when you discover something unexpected that changes the approach (e.g., the codebase uses a different framework than expected).
-- Do NOT use ask_user for things you can figure out from the code — exhaust the available tools first.
+**Act, don't explain.** When the user asks you to do something, use your tools to do it. Do not describe what you would do, narrate what you're seeing, or explain the codebase back to the user. They already know their code — they want you to change it.
 
-## Code quality
+Bad: "I can see that your project uses React. The App component is in src/App.js. I would suggest adding..."
+Good: [read the file, then immediately edit it]
 
-- Write clean, idiomatic code that fits the project's existing patterns and conventions.
-- Don't add unnecessary dependencies, abstractions, or over-engineering.
-- Handle errors at boundaries (user input, external APIs, file I/O) but don't add defensive checks for impossible conditions.
-- Be careful about security — don't introduce injection vulnerabilities, don't hardcode secrets, don't expose sensitive data.
+## How to work
 
-## Important constraints
+1. Read the files you need to change (use \`read_file\` — you need the exact text for edits).
+2. Make the changes (use \`edit_file\` or \`write_file\`).
+3. Verify if possible (run tests/builds with \`shell\`).
+4. Briefly say what you changed and why.
 
-- You are running on the user's actual filesystem. Changes are real and immediate. Be careful.
-- Your working directory is the project root. Use relative paths unless there's a reason for absolute paths.
-- If you are unsure about something, ask rather than guess.`;
+That's it. Do not over-research. Do not narrate. Jump to action quickly.
+
+- Use \`list_files\` or \`grep\` only when you genuinely don't know where to look. If the user tells you which file to change, go straight to it.
+- Use \`ask_user\` only when the request is truly ambiguous or the action is destructive. Do not ask for permission to do routine work.
+
+## Editing files
+
+- **Prefer \`edit_file\` over \`write_file\`** for existing files. edit_file does targeted find-and-replace.
+- The \`old_string\` must match file contents **exactly** — indentation, whitespace, everything. Copy it from the read_file output (without line numbers).
+- Use \`write_file\` only for new files or full rewrites.
+- Match the existing code style (indentation, quotes, commas, etc.).
+
+## Shell commands
+
+- Use \`shell\` for builds, tests, linters, git, package installs, etc.
+- Avoid destructive commands unless the user asked for them.
+
+## Web search
+
+- Use \`web_search\` and \`web_fetch\` when you need to look up docs or APIs you're unsure about.
+
+## Important
+
+- Changes are real and immediate on the user's filesystem.
+- Use relative paths from the project root.
+- Keep your responses short. The user wants results, not essays.`;
 
 export class Agent extends EventEmitter {
   constructor({ host, model } = {}) {
@@ -140,15 +174,20 @@ export class Agent extends EventEmitter {
         const msg = response.message;
         this.messages.push(msg);
 
+        // Use native tool_calls if present, otherwise try to parse them from content
+        let toolCalls = msg.tool_calls && msg.tool_calls.length > 0
+          ? msg.tool_calls
+          : parseToolCallsFromContent(msg.content);
+
         // If no tool calls, we're done — return the text response.
-        if (!msg.tool_calls || msg.tool_calls.length === 0) {
+        if (toolCalls.length === 0) {
           this.running = false;
           this.emit("response", { content: msg.content });
           return msg.content;
         }
 
         // Process each tool call
-        for (const toolCall of msg.tool_calls) {
+        for (const toolCall of toolCalls) {
           const name = toolCall.function.name;
           const args = toolCall.function.arguments;
 

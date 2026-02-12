@@ -13,6 +13,9 @@ export async function chat(ollama, model, messages, tools) {
     messages,
     tools,
     stream: false,
+    options: {
+      num_ctx: 16384
+    }
   });
   return response;
 }
