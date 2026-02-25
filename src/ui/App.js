@@ -195,26 +195,19 @@ export default function App({ agent, initialPrompt }) {
     // Handle Ctrl+C (works in both raw and non-raw mode)
     if (key.ctrl && ch === "c") {
       const now = Date.now();
-      if (busy) {
-        // First Ctrl-C during execution - cancel the operation
-        if (now - lastCtrlC.current < 500) {
-          // Double tap - exit
-          exit();
-        } else {
-          // Single tap - cancel current operation
+      if (now - lastCtrlC.current < 500) {
+        // Double tap within 500ms - exit
+        exit();
+      } else {
+        // Single tap - check if we should cancel or prepare for double tap
+        if (busy) {
+          // Cancel current operation
           agent.cancel();
           setLog((prev) => [...prev, { role: "tool", text: "(operation cancelled)" }]);
           setBusy(false);
           setStatusText("");
-          lastCtrlC.current = now;
         }
-      } else {
-        // Not busy - exit on double tap
-        if (now - lastCtrlC.current < 500) {
-          exit();
-        } else {
-          lastCtrlC.current = now;
-        }
+        lastCtrlC.current = now;
       }
     }
 
