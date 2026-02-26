@@ -49,10 +49,8 @@ All tools self-register by calling `register(name, { description, parameters, ex
 |------|-----------|---------|
 | `registry.js` | — | Tool registry. `register()`, `execute()`, `ollamaTools()` (serializes to Ollama format), `list()`. |
 | `read_file.js` | `read_file` | Reads a file, returns numbered lines. Supports `offset`/`limit` params. |
-| `write_file.js` | `write_file` | Writes content to a file, creating parent dirs if needed. |
-| `edit_file.js` | `edit_file` | Find-and-replace: finds `old_string` in file, replaces with `new_string`. First occurrence only. |
 | `list_files.js` | `list_files` | Glob-based file listing (uses `glob` npm package). Ignores `node_modules/` and `.git/`. |
-| `shell.js` | `shell` | Runs a shell command via `execSync`. 30s default timeout, 1MB max buffer. |
+| `run_command.js` | `run_command` | Runs a shell command via `execSync`. 30s default timeout, 1MB max buffer. |
 | `grep.js` | `grep` | Regex search via `grep -rn`. Returns up to 200 matching lines. |
 | `find_in_file.js` | `find_in_file` | Search for specific text within a file and return line numbers and content. Useful for locating where to make edits. |
 | `web_search.js` | `web_search` | Web search via `ollama.webSearch()`. Requires `OLLAMA_API_KEY`. Needs client injected via `setOllamaClient()`. |
@@ -170,7 +168,7 @@ The agent supports two modes:
 
 - `Agent.mode` property tracks current mode ("coding" or "planning")
 - `Agent.setMode(newMode)` switches modes and resets `_initialized` to rebuild system prompt
-- `registry.ollamaTools(planningMode)` filters out write tools (`write_file`, `edit_file`, `shell`) when in planning mode
+- `registry.ollamaTools(planningMode)` filters out write tools (`run_command`) when in planning mode
 - Two separate system prompts: `SYSTEM_PROMPT` for coding, `PLANNING_SYSTEM_PROMPT` for planning
 - UI commands: `/plan`, `/code`, `/mode` — handled in `App.js` submit callback
 

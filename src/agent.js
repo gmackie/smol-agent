@@ -2,31 +2,22 @@ import { EventEmitter } from "node:events";
 import * as ollama from "./ollama.js";
 import * as registry from "./tools/registry.js";
 import { gatherContext } from "./context.js";
-import { getCurrentPlan, getPlanSummary, hasActivePlan } from "./plan-tracker.js";
+import { getCurrentPlan, getPlanSummary, hasActivePlan, updatePlanStatus } from "./plan-tracker.js";
+import { logger } from "./logger.js";
 import ContextTracker from "./context-tracker.js";
-import { estimateTokenCount, shouldSummarize, createSummarizedMessages, simpleSummarize } from "./conversation-summarizer.js";
+import { estimateTokenCount, shouldSummarize, createSummarizedMessages, simpleSummarize, getTokenBreakdown } from "./conversation-summarizer.js";
 
 // Detect if we're a child agent (for multi-agent coordination)
 const IS_CHILD_AGENT = process.env.SMOL_AGENT_PARENT_ID !== undefined;
 
 // Import all tools so they self-register
-import "./tools/read_file.js";
-import "./tools/write_file.js";
-import "./tools/edit_file.js";
-import "./tools/list_files.js";
-import "./tools/shell.js";
+import "./tools/run_command.js";
 import "./tools/grep.js";
-import "./tools/find_in_file.js";
 import { setOllamaClient as setSearchClient } from "./tools/web_search.js";
 import { setOllamaClient as setFetchClient } from "./tools/web_fetch.js";
 import "./tools/ask_user.js";
-import "./tools/spawn_agent.js";
-import "./tools/agent_coordinator.js";
-import "./tools/agent_monitor.js";
-import "./tools/agent_status.js";
 import "./tools/plan_tools.js";
 import "./tools/requirements_tools.js";
-import "./tools/file_touched.js";
 
 /**
  * Attempt to extract tool calls from the assistant's text content.
@@ -94,7 +85,7 @@ Your job in this mode:
 
 1. Use \`ask_requirements\` to ask clarifying questions if the task is ambiguous
 2. Use \`analyze_task\` to break complex tasks into sub-tasks
-3. Use \`read_file\`, \`list_files\`, \`grep\`, and \`find_in_file\` to understand the codebase
+3. Use \`grep\` to understand the codebase
 4. Use \`web_search\` and \`web_fetch\` if you need to research something
 5. When you have enough information, use \`save_plan\` to save your plan
 
@@ -145,7 +136,7 @@ Your plan should be saved using the \`save_plan\` tool with markdown format:
 
 ## Important
 
-- You cannot use \`write_file\`, \`edit_file\`, or \`shell\` in preplan mode
+- You cannot use \`run_command\` in preplan mode
 - Always ask questions if you're unsure about requirements
 - Break complex tasks into smaller, actionable steps
 - The plan should be detailed enough that it can be followed step-by-step
@@ -157,7 +148,7 @@ const SYSTEM_PROMPT = `You are smol-agent, a coding assistant that runs in the u
 
 ## Mode: CODING
 
-You are in CODING mode. You can read, write, edit files and run shell commands.
+You are in CODING mode. You can read files and run shell commands via tools.
 
 ## Golden rule
 
@@ -168,26 +159,19 @@ Good: [read the file, then immediately edit it]
 
 ## How to work
 
-1. Read the files you need to change (use \`read_file\` — you need the exact text for edits).
-2. Make the changes (use \`edit_file\` or \`write_file\`).
-3. Verify if possible (run tests/builds with \`shell\`).
+1. Read the files you need to change using shell commands (e.g., \`cat file\`).
+2. Make the changes using shell commands (like \`sed\`, \`echo\`, \`cat >\`, etc.) with the \`run_command\` tool.
+3. Verify if possible (run tests/builds with \`run_command\`).
 4. Briefly say what you changed and why.
 
 That's it. Do not over-research. Do not narrate. Jump to action quickly.
 
-- Use \`list_files\` or \`grep\` only when you genuinely don't know where to look. If the user tells you which file to change, go straight to it.
+- Use \`grep\` only when you genuinely don't know where to look. If the user tells you which file to change, go straight to it.
 - Use \`ask_user\` only when the request is truly ambiguous or the action is destructive. Do not ask for permission to do routine work.
-
-## Editing files
-
-- **Prefer \`edit_file\` over \`write_file\`** for existing files. edit_file does targeted find-and-replace.
-- The \`old_string\` must match file contents **exactly** — indentation, whitespace, everything. Copy it from the read_file output (without line numbers).
-- Use \`write_file\` only for new files or full rewrites.
-- Match the existing code style (indentation, quotes, commas, etc.).
 
 ## Shell commands
 
-- Use \`shell\` for builds, tests, linters, git, package installs, etc.
+- Use \`run_command\` for builds, tests, linters, git, package installs, file edits, etc.
 - Avoid destructive commands unless the user asked for them.
 
 ## Web search
@@ -222,7 +206,7 @@ You are in PLANNING mode. You can **only read files and search the codebase** �
 
 ## How to work
 
-1. Use \`read_file\`, \`list_files\`, \`grep\`, and \`find_in_file\` to understand the codebase.
+1. Use \`grep\` to understand the codebase.
 2. Use \`web_search\` and \`web_fetch\` if you need to research something.
 3. Ask clarifying questions with \`ask_user\` if the request is ambiguous.
 4. Produce a detailed plan with:
@@ -268,7 +252,7 @@ After the user reviews your plan, they may ask you to switch to coding mode to i
 
 ## Important
 
-- You cannot use \`write_file\`, \`edit_file\`, or \`shell\` in planning mode.
+- You cannot use \`run_command\` in planning mode.
 - Be thorough but concise. The user wants a clear roadmap.
 - Match the existing code style in your suggestions.`;
 
@@ -322,6 +306,32 @@ export class Agent extends EventEmitter {
   }
 
   /**
+   * Get current token usage info
+   */
+  getTokenInfo() {
+    const currentTokens = estimateTokenCount(this.messages);
+    const breakdown = getTokenBreakdown(this.messages);
+    const percentage = Math.round((currentTokens / this.maxTokens) * 100);
+    
+    return {
+      current: currentTokens,
+      max: this.maxTokens,
+      percentage,
+      shouldSummarize: currentTokens > this.targetTokenThreshold,
+      breakdown,
+    };
+  }
+
+  /**
+   * Log current token usage
+   */
+  _logTokenUsage(label = 'Current') {
+    const info = this.getTokenInfo();
+    logger.info(`Token usage [${label}]: ${info.current}/${info.max} (${info.percentage}%)`);
+    return info;
+  }
+
+  /**
    * Summarize conversation if needed
    */
   async summarizeIfNeeded() {
@@ -329,12 +339,17 @@ export class Agent extends EventEmitter {
       return;
     }
 
+    const info = this._logTokenUsage('Before summarization');
+    logger.warn(`Context summarization triggered: ${info.current}/${info.max} (${info.percentage}%)`);
+
     // Simple summarization: keep system prompt and recent messages
     // In production, this would call an LLM for better summaries
     const summary = simpleSummarize(this.messages, 5);
     
     if (summary.length !== this.messages.length) {
       this.messages = summary;
+      this._logTokenUsage('After summarization');
+      logger.info(`Summarized conversation: ${summary.length} messages remaining`);
     }
   }
 
@@ -402,8 +417,24 @@ export class Agent extends EventEmitter {
   async run(userMessage) {
     await this._init();
     
+    // Log initial token usage
+    this._logTokenUsage('Start of turn');
+    
+    // Prune conversation if needed before adding new message
+    const currentTokens = estimateTokenCount(this.messages);
+    if (currentTokens > this.maxTokens * 0.85) {
+      logger.warn(`Pruning conversation: ${currentTokens} tokens approaching limit`);
+      // Keep system prompt and recent messages
+      const recentCount = Math.max(5, Math.floor(this.messages.length * 0.3));
+      this.messages = [this.messages[0], ...this.messages.slice(-(recentCount - 1))];
+      this._logTokenUsage('After pruning');
+    }
+    
     // Check if we need to summarize before adding new message
     await this.summarizeIfNeeded();
+    
+    // Log after summarization
+    this._logTokenUsage('After summarization check');
 
     // Auto-switch to preplan mode for complex tasks
     const isComplexTask = this.shouldPreplan(userMessage);
@@ -416,6 +447,9 @@ export class Agent extends EventEmitter {
     this.running = true;
     this.abortController = new AbortController();
     this.messages.push({ role: "user", content: userMessage });
+    
+    // Log with user message added
+    this._logTokenUsage('After adding user message');
 
     const planningMode = this.mode === "planning";
     const preplanMode = this.mode === "preplan";
@@ -428,15 +462,45 @@ export class Agent extends EventEmitter {
         iterations++;
 
         // Check if we need to summarize before each API call
+        const beforeCallTokens = this._logTokenUsage(`Iteration ${iterations} - before API call`);
+        
+        // Emit token info for UI display
+        this.emit("token_usage", { 
+          current: beforeCallTokens.current, 
+          max: beforeCallTokens.max, 
+          percentage: beforeCallTokens.percentage 
+        });
+
         await this.summarizeIfNeeded();
 
-        const response = await ollama.chat(
-          this.client,
-          this.model,
-          this.messages,
-          tools,
-          this.abortController.signal
-        );
+        // Use chat with retry for better error recovery
+        let response;
+        try {
+          response = await ollama.chatWithRetry(
+            this.client,
+            this.model,
+            this.messages,
+            tools,
+            this.abortController.signal,
+            this.maxTokens
+          );
+        } catch (err) {
+          logger.error("Chat API failed after all retries", { error: err.message });
+          
+          // If we have an active plan, mark it as failed
+          const currentPlan = await getCurrentPlan();
+          if (currentPlan && this.mode === "coding") {
+            try {
+              await updatePlanStatus(currentPlan.filename, "abandoned", {
+                message: `Failed after retries: ${err.message}`,
+              });
+            } catch {
+              // Ignore plan tracker errors
+            }
+          }
+          
+          throw err;
+        }
 
         const msg = response.message;
         this.messages.push(msg);
@@ -500,10 +564,19 @@ export class Agent extends EventEmitter {
     } catch (err) {
       this.running = false;
       this.abortController = null;
+      
+      logger.error("Agent run failed", { 
+        error: err.message,
+        stack: err.stack,
+        mode: this.mode,
+        iterations: iterations,
+      });
+      
       if (err.name === "AbortError" || err.message === "Operation cancelled") {
         this.emit("response", { content: "(Operation cancelled)" });
         return "(Operation cancelled)";
       }
+      
       this.emit("error", err);
       throw err;
     }

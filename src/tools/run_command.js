@@ -2,7 +2,7 @@ import { execSync } from "node:child_process";
 import { register } from "./registry.js";
 import { resolveJailedPath } from "../path-utils.js";
 
-register("shell", {
+register("run_command", {
   description:
     "Execute a shell command and return its stdout/stderr. Use for running builds, tests, git commands, installing packages, etc. Commands run in the current working directory.",
   parameters: {

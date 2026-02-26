@@ -13,7 +13,7 @@ smol-agent gives a local language model the tools it needs to read, write, and e
 
    [tool] list_files(pattern: src/**)
    [tool] read_file(path: src/routes/users.js)
-   [tool] edit_file(path: src/routes/users.js, old_string: const users = db.q...)
+   [tool] run_command(command: src/routes/users.js, command: "sed -i s/const users/const safeUsers/ src/routes/users.js")
  ⠋ thinking...
 ```
 
@@ -26,7 +26,7 @@ Once the agent finishes its tool-call loop, it prints a response:
 
    [tool] list_files(pattern: src/**)
    [tool] read_file(path: src/routes/users.js)
-   [tool] edit_file(path: src/routes/users.js, old_string: const users = db.q...)
+   [tool] run_command(command: src/routes/users.js, command: "sed -i s/const users/const safeUsers/ src/routes/users.js")
 
  agent> Done. I wrapped the database query in a try/catch and added a 500
         response with a JSON error body. The endpoint now returns
@@ -328,10 +328,8 @@ The agent has access to the following tools:
 | Tool | Description |
 |------|-------------|
 | `read_file` | Read file contents with optional line offset/limit |
-| `write_file` | Create or overwrite files (creates parent directories) |
-| `edit_file` | Find-and-replace editing within a file |
 | `list_files` | Glob-based file and directory listing |
-| `shell` | Execute shell commands (builds, tests, git, etc.) |
+| `run_command` | Execute shell commands (builds, tests, git, etc.) |
 | `grep` | Regex search across files with line numbers |
 | `find_in_file` | Search for specific text within a file and return line numbers and content |
 | `web_search` | Search the web via [Ollama's web search API](https://docs.ollama.com/capabilities/web-search) |
@@ -378,10 +376,8 @@ src/
 └── tools/
     ├── registry.js       Tool registration and dispatch
     ├── read_file.js      Read file contents
-    ├── write_file.js     Write/create files
-    ├── edit_file.js      Find-and-replace editing
     ├── list_files.js     Glob-based file listing
-    ├── shell.js          Shell command execution
+    ├── run_command.js          Shell command execution
     ├── grep.js           Regex search across files
     ├── web_search.js     Web search via Ollama API
     ├── web_fetch.js      URL fetch via Ollama API

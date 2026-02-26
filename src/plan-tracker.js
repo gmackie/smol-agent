@@ -125,3 +125,23 @@ export async function hasActivePlan() {
   const current = await getCurrentPlan();
   return current !== null;
 }
+
+/**
+ * Update plan status
+ */
+export async function updatePlanStatus(planFilename, status, details = {}) {
+  const progress = await loadPlanProgress();
+  
+  if (!progress[planFilename]) {
+    return { success: false, error: "Plan not found" };
+  }
+  
+  progress[planFilename].status = status;
+  progress[planFilename].details = { ...progress[planFilename].details, ...details };
+  progress[planFilename].updatedAt = Date.now();
+  
+  const progressFile = path.join(".smol-agent/state", "plan-progress.json");
+  await fs.writeFile(progressFile, JSON.stringify(progress, null, 2), "utf-8");
+  
+  return { success: true, planFilename, status };
+}
