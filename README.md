@@ -102,7 +102,7 @@ This makes agent responses much easier to read and understand at a glance.
 ### Quick Install (recommended)
 
 ```bash
-git clone https://github.com/smol-ai/smol-agent.git
+git clone https://github.com/streed/smol-agent.git
 cd smol-agent
 ./install.sh
 ```
@@ -115,7 +115,7 @@ The installer will:
 ### Manual Install
 
 ```bash
-git clone https://github.com/smol-ai/smol-agent.git
+git clone https://github.com/streed/smol-agent.git
 cd smol-agent
 npm install
 npm link   # makes `smol-agent` available globally
