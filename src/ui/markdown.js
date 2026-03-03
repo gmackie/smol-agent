@@ -1,11 +1,13 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Text, Box } from "ink";
 
 const e = React.createElement;
 
 export function Markdown({ children }) {
   if (!children) return null;
-  return e(Box, { flexDirection: "column" }, ...processMarkdown(children));
+  // Memoize parsing to prevent re-parsing on every render
+  const elements = useMemo(() => processMarkdown(children), [children]);
+  return e(Box, { flexDirection: "column" }, ...elements);
 }
 
 // ── Theme (glow dark-inspired) ──────────────────────────────────────
@@ -360,6 +362,30 @@ export function processInlineFormatting(text) {
     else elements.push(e(Text, { key: idx }, seg.content));
   });
   return elements;
+}
+
+// Memoized version for use in App.js
+const inlineFormatCache = new Map();
+const MAX_CACHE_SIZE = 100;
+
+export function memoizedProcessInlineFormatting(text) {
+  if (!text) return [e(Text, null, "")];
+  
+  // Check cache
+  const cached = inlineFormatCache.get(text);
+  if (cached) return cached;
+  
+  // Process and cache
+  const result = processInlineFormatting(text);
+  
+  // Limit cache size
+  if (inlineFormatCache.size >= MAX_CACHE_SIZE) {
+    const firstKey = inlineFormatCache.keys().next().value;
+    inlineFormatCache.delete(firstKey);
+  }
+  
+  inlineFormatCache.set(text, result);
+  return result;
 }
 
 function splitIntoSegments(text) {

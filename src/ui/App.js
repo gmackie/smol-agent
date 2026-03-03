@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { MultilineInput, useMultilineInput } from "./MultilineInput.js";
 import Spinner from "ink-spinner";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { setAskHandler } from "../tools/ask_user.js";
+import { saveSetting } from "../settings.js";
 import { Markdown, processInlineFormatting } from "./markdown.js";
 
 const isRawModeSupported =
@@ -115,6 +116,7 @@ export default function App({ agent, initialPrompt }) {
   const lastCtrlC = useRef(0);
   const contextReady = useRef(false);
   const minTimeElapsed = useRef(false);
+  const logIdRef = useRef(0);
 
   const [log, setLog] = useState([]);
   const [input, setInput] = useState("");
@@ -124,9 +126,16 @@ export default function App({ agent, initialPrompt }) {
   const [approvalState, setApprovalState] = useState(null);
   const [tokenUsage, setTokenUsage] = useState(null);
 
-  // Streaming state
+  // Helper to add stable IDs to log entries (prevents React reconciliation issues)
+  const addToLog = useCallback((entry) => {
+    const id = ++logIdRef.current;
+    return (prev) => [...prev, { ...entry, id }];
+  }, []);
+
+  // Streaming state (throttled to reduce re-renders)
   const streamRef = useRef("");
   const [streamDisplay, setStreamDisplay] = useState("");
+  const streamThrottleRef = useRef(null);
 
   // Loading animation
   const [isLoading, setIsLoading] = useState(true);
@@ -135,12 +144,19 @@ export default function App({ agent, initialPrompt }) {
 
   const { stdout } = useStdout();
 
-  // Track terminal columns for responsive layout on resize
+  // Track terminal columns for responsive layout on resize (debounced)
   const [columns, setColumns] = useState(stdout?.columns || 80);
   useEffect(() => {
-    const onResize = () => setColumns(stdout?.columns || 80);
+    let timeout;
+    const onResize = () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => setColumns(stdout?.columns || 80), 100);
+    };
     stdout?.on("resize", onResize);
-    return () => stdout?.off("resize", onResize);
+    return () => {
+      clearTimeout(timeout);
+      stdout?.off("resize", onResize);
+    };
   }, [stdout]);
 
   // Multiline input state
@@ -174,12 +190,25 @@ export default function App({ agent, initialPrompt }) {
     };
     const onToken = ({ content }) => {
       streamRef.current += content;
+      // Throttle stream display updates to ~30fps for smoother rendering
+      if (!streamThrottleRef.current) {
+        streamThrottleRef.current = setTimeout(() => {
+          setStreamDisplay(streamRef.current);
+          streamThrottleRef.current = null;
+        }, 33);
+      }
+    };
+    const onStreamEnd = () => {
+      // Clear any pending throttle and flush final content
+      if (streamThrottleRef.current) {
+        clearTimeout(streamThrottleRef.current);
+        streamThrottleRef.current = null;
+      }
       setStreamDisplay(streamRef.current);
     };
-    const onStreamEnd = () => { /* wait for tool_call or response */ };
 
     const onThinking = ({ content }) => {
-      setLog((prev) => [...prev, { role: "thinking", text: content }]);
+      setLog(addToLog({ role: "thinking", text: content }));
     };
 
     const onToolCall = ({ name, args }) => {
@@ -188,14 +217,11 @@ export default function App({ agent, initialPrompt }) {
         const text = streamRef.current;
         streamRef.current = "";
         setStreamDisplay("");
-        setLog((prev) => [...prev, { role: "agent", text }]);
+        setLog(addToLog({ role: "agent", text }));
       }
       const summary = summarizeArgs(args);
       setStatusText(`${name}(${summary})`);
-      setLog((prev) => [
-        ...prev,
-        { role: "tool", text: `[tool] ${name}(${summary})` },
-      ]);
+      setLog(addToLog({ role: "tool", text: `[tool] ${name}(${summary})` }));
     };
     const onToolResult = () => setStatusText("");
 
@@ -205,15 +231,24 @@ export default function App({ agent, initialPrompt }) {
       contextReady.current = true;
       if (minTimeElapsed.current) {
         setIsLoading(false);
-        setLog((prev) => [
-          ...prev,
-          { role: "tool", text: "(project context gathered)" },
-        ]);
+        setLog(addToLog({ role: "tool", text: "(project context gathered)" }));
       }
     };
 
     const onError = (error) => {
-      setLog((prev) => [...prev, { role: "error", text: error.message }]);
+      setLog(addToLog({ role: "error", text: error.message }));
+    };
+
+    const onSubAgentProgress = (event) => {
+      if (event.type === "start") {
+        setStatusText(`delegate: ${event.task?.substring(0, 60) || "researching"}...`);
+      } else if (event.type === "tool_call") {
+        setStatusText(`delegate → ${event.name}(${summarizeArgs(event.args).substring(0, 50)})`);
+      } else if (event.type === "iteration") {
+        setStatusText(`delegate: iteration ${event.current}/${event.max}`);
+      } else if (event.type === "done") {
+        setStatusText("");
+      }
     };
 
     agent.on("stream_start", onStreamStart);
@@ -225,6 +260,7 @@ export default function App({ agent, initialPrompt }) {
     agent.on("token_usage", onTokenUsage);
     agent.on("context_ready", onContextReady);
     agent.on("error", onError);
+    agent.on("sub_agent_progress", onSubAgentProgress);
 
     return () => {
       agent.off("stream_start", onStreamStart);
@@ -236,8 +272,14 @@ export default function App({ agent, initialPrompt }) {
       agent.off("token_usage", onTokenUsage);
       agent.off("context_ready", onContextReady);
       agent.off("error", onError);
+      agent.off("sub_agent_progress", onSubAgentProgress);
+      // Clean up any pending stream throttle timeout
+      if (streamThrottleRef.current) {
+        clearTimeout(streamThrottleRef.current);
+        streamThrottleRef.current = null;
+      }
     };
-  }, [agent]);
+  }, [agent, addToLog]);
 
   // Loading animation loop - cycles through colors
   useEffect(() => {
@@ -268,10 +310,7 @@ export default function App({ agent, initialPrompt }) {
       minTimeElapsed.current = true;
       if (contextReady.current) {
         setIsLoading(false);
-        setLog((prev) => [
-          ...prev,
-          { role: "tool", text: "(project context gathered)" },
-        ]);
+        setLog(addToLog({ role: "tool", text: "(project context gathered)" }));
       }
     }, 5000);
     return () => clearTimeout(timer);
@@ -286,7 +325,7 @@ export default function App({ agent, initialPrompt }) {
 
       if (text.trim() === "/reset") {
         agent.reset();
-        setLog((prev) => [...prev, { role: "tool", text: "(conversation reset)" }]);
+        setLog(addToLog({ role: "tool", text: "(conversation reset)" }));
         return;
       }
       if (text.trim() === "/inspect") {
@@ -294,14 +333,14 @@ export default function App({ agent, initialPrompt }) {
           const context = await agent.getContext();
           const contextPath = join(agent.jailDirectory, "CONTEXT.md");
           writeFileSync(contextPath, context, "utf-8");
-          setLog((prev) => [...prev, { role: "tool", text: `(context saved to ${contextPath})` }]);
+          setLog(addToLog({ role: "tool", text: `(context saved to ${contextPath})` }));
         } catch (err) {
-          setLog((prev) => [...prev, { role: "error", text: `Failed to save context: ${err.message}` }]);
+          setLog(addToLog({ role: "error", text: `Failed to save context: ${err.message}` }));
         }
         return;
       }
 
-      setLog((prev) => [...prev, { role: "user", text: text.trim() }]);
+      setLog(addToLog({ role: "user", text: text.trim() }));
       setBusy(true);
       setStatusText("thinking...");
 
@@ -310,14 +349,14 @@ export default function App({ agent, initialPrompt }) {
         // Clear any residual streaming state
         streamRef.current = "";
         setStreamDisplay("");
-        setLog((prev) => [...prev, { role: "agent", text: answer }]);
+        setLog(addToLog({ role: "agent", text: answer }));
       } catch (err) {
-        setLog((prev) => [...prev, { role: "error", text: err.message }]);
+        setLog(addToLog({ role: "error", text: err.message }));
       }
       setBusy(false);
       setStatusText("");
     },
-    [agent, exit],
+    [agent, exit, addToLog],
   );
 
   useEffect(() => {
@@ -328,7 +367,7 @@ export default function App({ agent, initialPrompt }) {
     (value) => {
       if (askState) {
         const answer = value.trim();
-        setLog((prev) => [...prev, { role: "user", text: `(answer) ${answer}` }]);
+        setLog(addToLog({ role: "user", text: `(answer) ${answer}` }));
         askState.resolve(answer);
         setAskState(null);
         setBusy(true);
@@ -339,7 +378,7 @@ export default function App({ agent, initialPrompt }) {
       setInput("");
       submit(value);
     },
-    [askState, submit],
+    [askState, submit, addToLog],
   );
 
   // Key bindings — stable callback to avoid listener churn during streaming
@@ -367,11 +406,11 @@ export default function App({ agent, initialPrompt }) {
           agent.cancel();
           streamRef.current = "";
           setStreamDisplay("");
-          setLog((prev) => [...prev, { role: "tool", text: "(operation cancelled — press Ctrl+C again to quit)" }]);
+          setLog(addToLog({ role: "tool", text: "(operation cancelled — press Ctrl+C again to quit)" }));
           setBusy(false);
           setStatusText("");
         } else {
-          setLog((prev) => [...prev, { role: "tool", text: "(press Ctrl+C again to quit)" }]);
+          setLog(addToLog({ role: "tool", text: "(press Ctrl+C again to quit)" }));
         }
         lastCtrlC.current = now;
       }
@@ -382,17 +421,19 @@ export default function App({ agent, initialPrompt }) {
     if (approvalRef.current) {
       const { name, resolve } = approvalRef.current;
       if (ch === "y" || key.return) {
-        setLog((prev) => [...prev, { role: "tool", text: `(approved ${name})` }]);
+        setLog(addToLog({ role: "tool", text: `(approved ${name})` }));
         resolve({ approved: true });
         setApprovalState(null);
       } else if (ch === "n") {
-        setLog((prev) => [...prev, { role: "tool", text: `(denied ${name})` }]);
+        setLog(addToLog({ role: "tool", text: `(denied ${name})` }));
         resolve({ approved: false });
         setApprovalState(null);
       } else if (ch === "a") {
-        setLog((prev) => [...prev, { role: "tool", text: "(approved all future tool calls)" }]);
+        setLog(addToLog({ role: "tool", text: "(approved all future tool calls — saved to settings)" }));
         resolve({ approved: true, approveAll: true });
         setApprovalState(null);
+        // Persist the setting for future sessions
+        saveSetting(agent.jailDirectory, "autoApprove", true).catch(() => {});
       }
       return;
     }
@@ -408,7 +449,7 @@ export default function App({ agent, initialPrompt }) {
         return;
       }
     }
-  }, [agent, exit, busy, input, handleMultilineInput, handleSubmit]);
+  }, [agent, exit, busy, input, handleMultilineInput, handleSubmit, addToLog]);
 
   useInput(inputHandler);
 
@@ -469,9 +510,10 @@ export default function App({ agent, initialPrompt }) {
 
     // ── Message log ──
     ...log.flatMap((entry) => {
+      const key = entry.id;
       if (entry.role === "user") {
         return [
-          e(Box, { marginTop: 1 },
+          e(Box, { key, marginTop: 1 },
             e(Text, { color: "green", bold: true }, " > "),
             e(Text, { bold: true }, entry.text || ""),
           ),
@@ -483,7 +525,7 @@ export default function App({ agent, initialPrompt }) {
         const first = lines[0];
         const rest = lines.slice(1).join("\n").trim();
         const result = [
-          e(Box, { marginTop: 1 },
+          e(Box, { key, marginTop: 1 },
             e(Text, null,
               e(Text, { color: "cyan", bold: true }, " \u23FA  "),
               ...processInlineFormatting(first),
@@ -492,7 +534,7 @@ export default function App({ agent, initialPrompt }) {
         ];
         if (rest) {
           result.push(
-            e(Box, { marginLeft: 4 }, e(Markdown, null, rest)),
+            e(Box, { key: `${key}-md`, marginLeft: 4 }, e(Markdown, null, rest)),
           );
         }
         return result;
@@ -500,17 +542,17 @@ export default function App({ agent, initialPrompt }) {
       if (entry.role === "thinking") {
         const lines = (entry.text || "").split("\n");
         return lines.map((line, i) =>
-          e(Text, { key: `think-${i}`, dimColor: true, color: "gray" },
+          e(Text, { key: `${key}-think-${i}`, dimColor: true, color: "gray" },
             i === 0 ? "    \u{1F9E0} " + line : "       " + line,
           ),
         );
       }
       if (entry.role === "tool") {
-        return [e(Text, { dimColor: true }, "    ⎿  " + (entry.text || ""))];
+        return [e(Text, { key, dimColor: true }, "    ⎿  " + (entry.text || ""))];
       }
       if (entry.role === "error") {
         return [
-          e(Box, { marginTop: 1 },
+          e(Box, { key, marginTop: 1 },
             e(Text, { color: "red" }, " ✗ " + (entry.text || "unknown error")),
           ),
         ];

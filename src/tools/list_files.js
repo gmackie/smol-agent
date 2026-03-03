@@ -21,10 +21,10 @@ register("list_files", {
       },
     },
   },
-  async execute({ pattern, path: searchPath }) {
+  async execute({ pattern, path: searchPath }, { cwd: baseCwd = process.cwd() } = {}) {
     const cwd = searchPath
-      ? resolveJailedPath(process.cwd(), searchPath)
-      : process.cwd();
+      ? resolveJailedPath(baseCwd, searchPath)
+      : baseCwd;
 
     const files = await glob(pattern, {
       cwd,

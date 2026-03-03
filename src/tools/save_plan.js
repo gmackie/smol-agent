@@ -1,27 +1,33 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { resolveJailedPath } from "../path-utils.js";
 
 const STATE_DIR = ".smol-agent/state";
-const PROGRESS_FILE = path.join(STATE_DIR, "plan-progress.json");
+const PROGRESS_FILE = "plan-progress.json";
 
 /**
- * Ensure the state directory exists
+ * Ensure the state directory exists within the jail
  */
-async function ensureStateDir() {
-  await fs.mkdir(STATE_DIR, { recursive: true });
+async function ensureStateDir(cwd) {
+  const statePath = resolveJailedPath(cwd, STATE_DIR);
+  await fs.mkdir(statePath, { recursive: true });
+  return statePath;
 }
 
 /**
- * Save a plan to a markdown file
+ * Save a plan to a markdown file within the jail directory
+ * @param {string} description - Plan description for filename
+ * @param {string} planContent - Markdown content
+ * @param {string} cwd - Jail directory
  * @returns {{ filename: string, filepath: string }}
  */
-export async function savePlan(description, planContent) {
+export async function savePlan(description, planContent, cwd = process.cwd()) {
   const slug = description
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
   const filename = `PLAN-${slug}-${Date.now()}.md`;
-  const filepath = path.resolve(filename);
+  const filepath = resolveJailedPath(cwd, filename);
 
   await fs.writeFile(filepath, planContent, "utf-8");
 
@@ -31,9 +37,10 @@ export async function savePlan(description, planContent) {
 /**
  * Save/update plan progress tracking
  */
-export async function savePlanProgress(filename, currentStep, status, details = {}) {
-  await ensureStateDir();
-  const progress = await loadPlanProgress();
+export async function savePlanProgress(filename, currentStep, status, details = {}, cwd = process.cwd()) {
+  const statePath = await ensureStateDir(cwd);
+  const progressFile = path.join(statePath, PROGRESS_FILE);
+  const progress = await loadPlanProgress(cwd);
 
   progress[filename] = {
     ...(progress[filename] || {}),
@@ -43,16 +50,18 @@ export async function savePlanProgress(filename, currentStep, status, details = 
     updatedAt: Date.now(),
   };
 
-  await fs.writeFile(PROGRESS_FILE, JSON.stringify(progress, null, 2), "utf-8");
+  await fs.writeFile(progressFile, JSON.stringify(progress, null, 2), "utf-8");
   return progress[filename];
 }
 
 /**
  * Load plan progress from file
  */
-export async function loadPlanProgress() {
+export async function loadPlanProgress(cwd = process.cwd()) {
   try {
-    const content = await fs.readFile(PROGRESS_FILE, "utf-8");
+    const statePath = resolveJailedPath(cwd, STATE_DIR);
+    const progressFile = path.join(statePath, PROGRESS_FILE);
+    const content = await fs.readFile(progressFile, "utf-8");
     return JSON.parse(content);
   } catch {
     return {};
@@ -62,8 +71,8 @@ export async function loadPlanProgress() {
 /**
  * Get the current active plan
  */
-export async function getCurrentPlan() {
-  const progress = await loadPlanProgress();
+export async function getCurrentPlan(cwd = process.cwd()) {
+  const progress = await loadPlanProgress(cwd);
   const filenames = Object.keys(progress);
 
   for (const filename of filenames) {
@@ -86,16 +95,17 @@ export async function getCurrentPlan() {
 /**
  * Mark a plan as completed
  */
-export async function markPlanCompleted(filename, message) {
-  return updatePlanStatus(filename, "completed", { message });
+export async function markPlanCompleted(filename, message, cwd = process.cwd()) {
+  return updatePlanStatus(filename, "completed", { message }, cwd);
 }
 
 /**
  * Update plan status
  */
-export async function updatePlanStatus(planFilename, status, details = {}) {
-  await ensureStateDir();
-  const progress = await loadPlanProgress();
+export async function updatePlanStatus(planFilename, status, details = {}, cwd = process.cwd()) {
+  const statePath = await ensureStateDir(cwd);
+  const progressFile = path.join(statePath, PROGRESS_FILE);
+  const progress = await loadPlanProgress(cwd);
 
   if (!progress[planFilename]) {
     return { success: false, error: "Plan not found" };
@@ -108,6 +118,6 @@ export async function updatePlanStatus(planFilename, status, details = {}) {
   };
   progress[planFilename].updatedAt = Date.now();
 
-  await fs.writeFile(PROGRESS_FILE, JSON.stringify(progress, null, 2), "utf-8");
+  await fs.writeFile(progressFile, JSON.stringify(progress, null, 2), "utf-8");
   return { success: true, planFilename, status };
 }

@@ -25,11 +25,11 @@ register("grep", {
       },
     },
   },
-  async execute({ pattern, path: searchPath, include }) {
+  async execute({ pattern, path: searchPath, include }, { cwd = process.cwd() } = {}) {
     // Resolve the search path against the jail directory
-    const resolvedSearchPath = searchPath 
-      ? resolveJailedPath(process.cwd(), searchPath)
-      : process.cwd();
+    const resolvedSearchPath = searchPath
+      ? resolveJailedPath(cwd, searchPath)
+      : cwd;
       
     const args = ["-rn", "--color=never"];
     if (include) args.push(`--include=${include}`);

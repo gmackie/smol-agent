@@ -2,25 +2,57 @@ import { register } from "./registry.js";
 import * as ollama from "../ollama.js";
 import * as registry from "./registry.js";
 import { logger } from "../logger.js";
+import { isContextOverflowError } from "../errors.js";
+import { parseToolCallsFromContent } from "../tool-call-parser.js";
 
-let agentHost = null;
-let agentModel = null;
-let agentMaxTokens = 32768;
-let agentCwd = process.cwd();
+// Config set by parent agent — updated per run with signal/progress callback
+const config = {
+  client: null,
+  host: null,
+  model: null,
+  maxTokens: 32768,
+  cwd: process.cwd(),
+  signal: null,
+  onProgress: null,
+};
 
 /**
  * Configure the sub-agent with the parent agent's connection details.
- * Called from Agent constructor.
+ * Called from Agent constructor (for client/model/cwd) and at each run()
+ * start (for signal/onProgress).
  */
-export function setSubAgentConfig({ host, model, maxTokens, cwd }) {
-  agentHost = host;
-  agentModel = model;
-  if (maxTokens) agentMaxTokens = Math.min(maxTokens, 32768);
-  if (cwd) agentCwd = cwd;
+export function setSubAgentConfig(cfg) {
+  if (cfg.host !== undefined) config.host = cfg.host;
+  if (cfg.model !== undefined) config.model = cfg.model;
+  if (cfg.maxTokens !== undefined) config.maxTokens = Math.min(cfg.maxTokens, 32768);
+  if (cfg.cwd !== undefined) config.cwd = cfg.cwd;
+  if (cfg.client !== undefined) config.client = cfg.client;
+  if (cfg.signal !== undefined) config.signal = cfg.signal;
+  if (cfg.onProgress !== undefined) config.onProgress = cfg.onProgress;
 }
 
 const READ_ONLY_TOOLS = new Set(["read_file", "list_files", "grep"]);
 const MAX_ITERATIONS = 15;
+
+/**
+ * Strip <thinking>...</thinking> tags from content to save context tokens.
+ */
+function stripThinking(content) {
+  if (!content) return content;
+  return content.replace(/<thinking>[\s\S]*?<\/thinking>/g, "").trim() || content;
+}
+
+/**
+ * Prune messages to recover from context overflow.
+ * Keeps system message + last few exchanges.
+ */
+function pruneMessages(messages) {
+  if (messages.length <= 4) return messages;
+  const system = messages[0];
+  // Keep last 4 messages (2 exchanges)
+  const recent = messages.slice(-4);
+  return [system, ...recent];
+}
 
 register("delegate", {
   description:
@@ -42,20 +74,24 @@ register("delegate", {
     required: ["task"],
   },
   async execute({ task, context }) {
-    if (!agentHost || !agentModel) {
+    if (!config.model) {
       return {
         error:
           "Sub-agent not configured. Only available for 30B+ models.",
       };
     }
 
-    const client = ollama.createClient(agentHost);
+    // Reuse parent's client or create one as fallback
+    const client = config.client || ollama.createClient(config.host);
+    const signal = config.signal;
+    const onProgress = config.onProgress;
+
     const readOnlyTools = registry
       .ollamaTools(true)
       .filter((t) => READ_ONLY_TOOLS.has(t.function.name));
 
     const systemPrompt = `You are a focused research sub-agent. Explore the codebase and return a concise answer.
-Working directory: ${agentCwd}
+Working directory: ${config.cwd}
 
 Rules:
 - Use tools to explore, then return a clear, concise summary.
@@ -69,28 +105,74 @@ ${context ? `\nContext: ${context}` : ""}`;
       { role: "user", content: task },
     ];
 
+    onProgress?.({ type: "start", task });
+
     try {
       for (let i = 0; i < MAX_ITERATIONS; i++) {
-        const response = await ollama.chatWithRetry(
-          client,
-          agentModel,
-          messages,
-          readOnlyTools,
-          null,
-          agentMaxTokens,
-        );
+        // Check cancellation
+        if (signal?.aborted) {
+          return { error: "Sub-agent cancelled" };
+        }
+
+        onProgress?.({ type: "iteration", current: i + 1, max: MAX_ITERATIONS });
+
+        let response;
+        try {
+          response = await ollama.chatWithRetry(
+            client,
+            config.model,
+            messages,
+            readOnlyTools,
+            signal,
+            config.maxTokens,
+          );
+        } catch (err) {
+          // Handle context overflow — prune and retry once
+          if (isContextOverflowError(err) && messages.length > 4) {
+            logger.warn("Sub-agent context overflow — pruning messages");
+            onProgress?.({ type: "prune", reason: "context_overflow" });
+            const pruned = pruneMessages(messages);
+            messages.length = 0;
+            messages.push(...pruned);
+            // Retry this iteration
+            try {
+              response = await ollama.chatWithRetry(
+                client, config.model, messages, readOnlyTools, signal, config.maxTokens,
+              );
+            } catch (retryErr) {
+              logger.error(`Sub-agent failed after prune: ${retryErr.message}`);
+              return { error: `Sub-agent context overflow (unrecoverable): ${retryErr.message}` };
+            }
+          } else {
+            throw err;
+          }
+        }
 
         const msg = response.message;
-        messages.push(msg);
 
-        if (!msg.tool_calls?.length) {
-          return { result: msg.content || "(no result)" };
+        // Strip thinking tags to save context tokens
+        const cleanedContent = stripThinking(msg.content);
+        messages.push({ role: "assistant", content: cleanedContent, tool_calls: msg.tool_calls });
+
+        // Check for tool calls — native first, then text parsing fallback
+        let toolCalls = msg.tool_calls || [];
+        if (toolCalls.length === 0 && cleanedContent) {
+          toolCalls = parseToolCallsFromContent(cleanedContent);
+        }
+
+        if (toolCalls.length === 0) {
+          onProgress?.({ type: "done", iterations: i + 1 });
+          return { result: cleanedContent || "(no result)" };
         }
 
         // Execute read-only tool calls
-        for (const tc of msg.tool_calls) {
+        for (const tc of toolCalls) {
           const name = tc.function.name;
           const args = tc.function.arguments;
+
+          if (signal?.aborted) {
+            return { error: "Sub-agent cancelled" };
+          }
 
           if (!READ_ONLY_TOOLS.has(name)) {
             messages.push({
@@ -102,7 +184,9 @@ ${context ? `\nContext: ${context}` : ""}`;
             continue;
           }
 
-          const result = await registry.execute(name, args);
+          onProgress?.({ type: "tool_call", name, args });
+
+          const result = await registry.execute(name, args, { cwd: config.cwd });
           const str = JSON.stringify(result);
           // Truncate large results for sub-agent's smaller context
           const truncated =
@@ -117,6 +201,7 @@ ${context ? `\nContext: ${context}` : ""}`;
       const lastAssistant = messages
         .filter((m) => m.role === "assistant")
         .pop();
+      onProgress?.({ type: "done", iterations: MAX_ITERATIONS, limitReached: true });
       return {
         result:
           lastAssistant?.content ||
@@ -124,6 +209,7 @@ ${context ? `\nContext: ${context}` : ""}`;
       };
     } catch (err) {
       logger.error(`Sub-agent failed: ${err.message}`);
+      onProgress?.({ type: "error", error: err.message });
       return { error: `Sub-agent failed: ${err.message}` };
     }
   },

@@ -6,6 +6,7 @@ import { Agent } from "./agent.js";
 import App from "./ui/App.js";
 import path from "node:path";
 import fs from "node:fs";
+import { loadSettings } from "./settings.js";
 
 // ── CLI argument parsing ─────────────────────────────────────────────
 const args = process.argv.slice(2);
@@ -91,7 +92,10 @@ function shouldUseCoreOnly(modelName) {
 
 const coreToolsOnly = shouldUseCoreOnly(model);
 const agent = new Agent({ host, model, contextSize, jailDirectory, coreToolsOnly });
-if (autoApprove) {
+
+// Load persisted settings, CLI flags override
+const settings = await loadSettings(jailDirectory);
+if (autoApprove || settings.autoApprove) {
   agent._approveAll = true;
 }
 

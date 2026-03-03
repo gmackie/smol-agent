@@ -10,7 +10,7 @@ import { savePlan, savePlanProgress, loadPlanProgress, getCurrentPlan, markPlanC
  * @param {string} description - A short description for the plan filename
  * @param {string} planContent - The full markdown content of the plan
  */
-async function execute({ description, planContent }) {
+async function execute({ description, planContent }, { cwd = process.cwd() } = {}) {
   if (!description || !planContent) {
     return {
       error: "Missing required parameters: 'description' and 'planContent' are required",
@@ -18,14 +18,14 @@ async function execute({ description, planContent }) {
   }
   
   try {
-    const { filename, filepath } = await savePlan(description, planContent);
+    const { filename, filepath } = await savePlan(description, planContent, cwd);
     
     // Initialize plan progress tracking
     await savePlanProgress(filename, 0, "pending", {
       totalSteps: 0,
       description,
       filepath,
-    });
+    }, cwd);
     
     return {
       success: true,
@@ -78,10 +78,10 @@ Returns success/failure with filename and filepath.`,
 /**
  * Load the current plan progress
  */
-async function executeLoadProgress() {
+async function executeLoadProgress({}, { cwd = process.cwd() } = {}) {
   try {
-    const progress = await loadPlanProgress();
-    const current = await getCurrentPlan();
+    const progress = await loadPlanProgress(cwd);
+    const current = await getCurrentPlan(cwd);
     
     return {
       success: true,
@@ -106,9 +106,9 @@ register("load_plan_progress", {
 /**
  * Get the current plan content from a saved file
  */
-async function executeGetCurrentPlanContent() {
+async function executeGetCurrentPlanContent({}, { cwd = process.cwd() } = {}) {
   try {
-    const current = await getCurrentPlan();
+    const current = await getCurrentPlan(cwd);
     
     if (!current) {
       return {
@@ -143,9 +143,9 @@ register("get_current_plan", {
 /**
  * Mark a step as completed in the current plan
  */
-async function executeCompleteStep(stepNumber, stepDescription) {
+async function executeCompleteStep({ stepNumber, stepDescription }, { cwd = process.cwd() } = {}) {
   try {
-    const current = await getCurrentPlan();
+    const current = await getCurrentPlan(cwd);
     
     if (!current) {
       return {
@@ -158,7 +158,7 @@ async function executeCompleteStep(stepNumber, stepDescription) {
       ...current.details,
       lastCompletedStep: stepNumber,
       lastCompletedDescription: stepDescription,
-    });
+    }, cwd);
     
     return {
       success: true,
@@ -192,9 +192,9 @@ register("complete_plan_step", {
 /**
  * Update the current plan status
  */
-async function executeUpdatePlanStatus(status, message) {
+async function executeUpdatePlanStatus({ status, message }, { cwd = process.cwd() } = {}) {
   try {
-    const current = await getCurrentPlan();
+    const current = await getCurrentPlan(cwd);
     
     if (!current) {
       return {
@@ -204,7 +204,7 @@ async function executeUpdatePlanStatus(status, message) {
     
     const result = await updatePlanStatus(current.filename, status, {
       message,
-    });
+    }, cwd);
     
     return result;
   } catch (err) {

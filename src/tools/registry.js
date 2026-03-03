@@ -7,6 +7,25 @@ import { logger } from '../logger.js';
 
 const tools = new Map();
 
+// Global jail directory - set by Agent, cannot be overridden by tool callers
+let _jailDirectory = null;
+
+/**
+ * Set the global jail directory. Called once by Agent during initialization.
+ * @param {string} dir - Absolute path to the jail directory
+ */
+export function setJailDirectory(dir) {
+  _jailDirectory = path.resolve(dir);
+  logger.debug(`Jail directory set to: ${_jailDirectory}`);
+}
+
+/**
+ * Get the current jail directory
+ */
+export function getJailDirectory() {
+  return _jailDirectory || process.cwd();
+}
+
 // Core tools — always shown to the model. Keeping this small improves
 // tool-selection accuracy on smaller models (7B–14B).
 const CORE_TOOLS = new Set([
@@ -113,8 +132,10 @@ export function extendedToolNames() {
 
 /**
  * Execute a tool call by name with the given arguments.
+ * Uses the global jail directory for security - the cwd parameter from callers
+ * is ignored to prevent jail escape attempts.
  */
-export async function execute(name, args, { cwd = process.cwd() } = {}) {
+export async function execute(name, args, options = {}) {
   const tool = tools.get(name);
   if (!tool) {
     logger.error(`Unknown tool: ${name}`);
@@ -128,10 +149,12 @@ export async function execute(name, args, { cwd = process.cwd() } = {}) {
     }
   }
 
-  logger.debug(`Executing tool: ${name}`, { args: Object.keys(args || {}) });
+  // Always use global jail directory, ignore options.cwd for security
+  const cwd = _jailDirectory || process.cwd();
+  logger.debug(`Executing tool: ${name}`, { args: Object.keys(args || {}), cwd });
 
   try {
-    const result = await tool.execute(args);
+    const result = await tool.execute(args, { cwd });
     logger.info(`Tool ${name} completed successfully`);
     return result;
   } catch (err) {
@@ -149,4 +172,14 @@ export function list() {
   return [...tools.keys()];
 }
 
-export default { register, ollamaTools, execute, list, validateToolArgs, validateFilePath, requiresApproval };
+export default { 
+  register, 
+  ollamaTools, 
+  execute, 
+  list, 
+  validateToolArgs, 
+  validateFilePath, 
+  requiresApproval,
+  setJailDirectory,
+  getJailDirectory,
+};

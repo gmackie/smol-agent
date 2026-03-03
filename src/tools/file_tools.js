@@ -32,8 +32,8 @@ register("read_file", {
       },
     },
   },
-  async execute({ filePath, startLine, endLine }) {
-    const resolved = resolveJailedPath(process.cwd(), filePath);
+  async execute({ filePath, startLine, endLine }, { cwd = process.cwd() } = {}) {
+    const resolved = resolveJailedPath(cwd, filePath);
 
     if (!fs.existsSync(resolved)) {
       return { error: `File not found: ${filePath}` };
@@ -99,8 +99,8 @@ register("write_file", {
       },
     },
   },
-  async execute({ filePath, content }) {
-    const resolved = resolveJailedPath(process.cwd(), filePath);
+  async execute({ filePath, content }, { cwd = process.cwd() } = {}) {
+    const resolved = resolveJailedPath(cwd, filePath);
 
     // Ensure parent directories exist
     const dir = path.dirname(resolved);
@@ -148,8 +148,8 @@ register("replace_in_file", {
       },
     },
   },
-  async execute({ filePath, oldText, newText, replaceAll }) {
-    const resolved = resolveJailedPath(process.cwd(), filePath);
+  async execute({ filePath, oldText, newText, replaceAll }, { cwd = process.cwd() } = {}) {
+    const resolved = resolveJailedPath(cwd, filePath);
 
     if (!fs.existsSync(resolved)) {
       return { error: `File not found: ${filePath}` };

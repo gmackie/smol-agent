@@ -1,6 +1,7 @@
 import { register } from "./registry.js";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { resolveJailedPath } from "../path-utils.js";
 
 const MEMORY_DIR = ".smol-agent";
 const MEMORY_FILE = "memory.json";
@@ -11,7 +12,8 @@ const MEMORY_FILE = "memory.json";
  */
 export async function loadMemories(cwd) {
   try {
-    const filepath = path.join(cwd, MEMORY_DIR, MEMORY_FILE);
+    const dirPath = resolveJailedPath(cwd, MEMORY_DIR);
+    const filepath = path.join(dirPath, MEMORY_FILE);
     const data = await fs.readFile(filepath, "utf-8");
     return JSON.parse(data);
   } catch {
@@ -20,12 +22,10 @@ export async function loadMemories(cwd) {
 }
 
 async function saveMemories(cwd, memories) {
-  const dir = path.join(cwd, MEMORY_DIR);
-  await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(
-    path.join(dir, MEMORY_FILE),
-    JSON.stringify(memories, null, 2),
-  );
+  const dirPath = resolveJailedPath(cwd, MEMORY_DIR);
+  await fs.mkdir(dirPath, { recursive: true });
+  const filepath = path.join(dirPath, MEMORY_FILE);
+  await fs.writeFile(filepath, JSON.stringify(memories, null, 2), "utf-8");
 }
 
 register("remember", {
@@ -51,8 +51,7 @@ register("remember", {
     },
     required: ["key", "value"],
   },
-  async execute({ key, value, category }) {
-    const cwd = process.cwd();
+  async execute({ key, value, category }, { cwd = process.cwd() } = {}) {
     const memories = await loadMemories(cwd);
     memories[key] = {
       value,
@@ -76,8 +75,7 @@ register("recall", {
       },
     },
   },
-  async execute({ key }) {
-    const cwd = process.cwd();
+  async execute({ key }, { cwd = process.cwd() } = {}) {
     const memories = await loadMemories(cwd);
     if (key) {
       return memories[key] || { error: `No memory for "${key}"` };

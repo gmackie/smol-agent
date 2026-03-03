@@ -5,6 +5,7 @@ import { gatherContext } from "./context.js";
 import { logger } from "./logger.js";
 import { ContextManager, getContextConfig } from "./context-manager.js";
 import { getCurrentPlan } from "./tools/save_plan.js";
+import { parseToolCallsFromContent } from "./tool-call-parser.js";
 
 // Import all tools so they self-register
 import "./tools/run_command.js";
@@ -18,80 +19,6 @@ import "./tools/plan_tools.js";
 import "./tools/reflection.js";
 import "./tools/memory.js";
 import { setSubAgentConfig } from "./tools/sub_agent.js";
-
-/**
- * Attempt to extract tool calls from the assistant's text content.
- * Some models output tool calls as JSON instead of using Ollama's
- * native tool_calls field.  We try multiple patterns because different
- * model families format them differently.
- */
-function parseToolCallsFromContent(content) {
-  if (!content) return [];
-
-  const calls = [];
-  const candidates = [];
-
-  // 1. Fenced JSON blocks (```json ... ``` or ``` ... ```)
-  const jsonBlockRe = /```(?:json)?\s*\n?([\s\S]*?)\n?```/g;
-  let match;
-  while ((match = jsonBlockRe.exec(content)) !== null) {
-    candidates.push(match[1].trim());
-  }
-
-  // 2. <tool_call> ... </tool_call> tags (used by some Qwen/Mistral models)
-  const toolCallTagRe = /<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/g;
-  while ((match = toolCallTagRe.exec(content)) !== null) {
-    candidates.push(match[1].trim());
-  }
-
-  // 3. Bare JSON objects with "name" and "arguments" keys (nested braces handled)
-  const bareJsonRe = /\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:\s*\{[\s\S]*?\}\s*\}/g;
-  while ((match = bareJsonRe.exec(content)) !== null) {
-    candidates.push(match[0].trim());
-  }
-
-  // 4. Function-call style:  function_name({"key": "value"})
-  const funcCallRe = /([a-z_][a-z0-9_]*)\((\{[\s\S]*?\})\)/gi;
-  while ((match = funcCallRe.exec(content)) !== null) {
-    const name = match[1];
-    const argsStr = match[2].trim();
-    try {
-      const args = JSON.parse(argsStr);
-      if (typeof args === "object") {
-        calls.push({ function: { name, arguments: args } });
-      }
-    } catch { /* not valid JSON args */ }
-  }
-
-  for (const candidate of candidates) {
-    try {
-      let parsed = JSON.parse(candidate);
-      // Handle arrays of tool calls
-      if (Array.isArray(parsed)) {
-        for (const item of parsed) {
-          if (item.name && typeof item.name === "string" && item.arguments && typeof item.arguments === "object") {
-            calls.push({ function: { name: item.name, arguments: item.arguments } });
-          }
-        }
-        continue;
-      }
-      if (parsed.name && typeof parsed.name === "string" &&
-          parsed.arguments && typeof parsed.arguments === "object") {
-        calls.push({
-          function: { name: parsed.name, arguments: parsed.arguments },
-        });
-      }
-      // Some models wrap in { "function": { "name": ..., "arguments": ... } }
-      if (parsed.function?.name && parsed.function?.arguments) {
-        calls.push({
-          function: { name: parsed.function.name, arguments: parsed.function.arguments },
-        });
-      }
-    } catch { /* not valid JSON */ }
-  }
-
-  return calls;
-}
 
 // ── Thinking tags parser ─────────────────────────────────────────────
 
@@ -280,20 +207,25 @@ export class Agent extends EventEmitter {
     this._approvalHandler = null;
     this._approveAll = false;
 
+    // Set the global jail directory for all tools
+    registry.setJailDirectory(this.jailDirectory);
+
     setSearchClient(this.client);
     setFetchClient(this.client);
 
     // Set up LLM-based summarization if model is large enough (has all tools)
     if (!coreToolsOnly) {
       this.contextManager.setLLMClient(host, this.model);
-      // Configure sub-agent for delegation
-      setSubAgentConfig({
-        host,
-        model: this.model,
-        maxTokens: this.maxTokens,
-        cwd: this.jailDirectory,
-      });
     }
+
+    // Always configure sub-agent for delegation (share parent's client)
+    setSubAgentConfig({
+      client: this.client,
+      host,
+      model: this.model,
+      maxTokens: this.maxTokens,
+      cwd: this.jailDirectory,
+    });
   }
 
   /**
@@ -413,6 +345,12 @@ export class Agent extends EventEmitter {
     this._verifiedFiles = new Set();
     this.messages.push({ role: "user", content: userMessage });
 
+    // Update sub-agent with current run's signal and progress callback
+    setSubAgentConfig({
+      signal: this.abortController.signal,
+      onProgress: (event) => this.emit("sub_agent_progress", event),
+    });
+
     const tools = registry.ollamaTools(this.coreToolsOnly);
     let iterations = 0;
     let streamTimedOut = false;
@@ -432,14 +370,18 @@ export class Agent extends EventEmitter {
         streamTimedOut = false;
         let streamTimer = setTimeout(() => {
           streamTimedOut = true;
-          this.abortController.abort();
+          if (this.abortController) {
+            this.abortController.abort();
+          }
         }, 60_000);
         const resetStreamTimer = () => {
           clearTimeout(streamTimer);
           if (!streamTimedOut) {
             streamTimer = setTimeout(() => {
               streamTimedOut = true;
-              this.abortController.abort();
+              if (this.abortController) {
+                this.abortController.abort();
+              }
             }, 60_000);
           }
         };
@@ -548,7 +490,7 @@ export class Agent extends EventEmitter {
             return { error: msg };
           }
 
-          let result = await registry.execute(name, args);
+          let result = await registry.execute(name, args, { cwd: this.jailDirectory });
 
           // Track consecutive failures
           if (result?.error) {
