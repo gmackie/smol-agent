@@ -65,20 +65,32 @@ jobs:
           SMOL_TEST_MAX_ITER: 20
           SMOL_TEST_CTX: 16384
         run: |
-          node test/e2e/runner.js --json > results.json 2>&1 || true
-          cat results.json
+          # Don't redirect stderr to avoid mixing progress messages with JSON
+          node test/e2e/runner.js --json > results.json || true
+
+          # Validate JSON before proceeding
+          if jq empty results.json 2>/dev/null; then
+            echo "✅ Valid JSON output"
+            jq -C '.' results.json | head -20
+          else
+            echo "⚠️  Invalid JSON output, showing raw file:"
+            head -50 results.json
+          fi
 
       - name: Extract results
         id: results
         run: |
-          if [ -f results.json ]; then
-            SCORE=$(jq -r '.aggregate.normalized' results.json)
-            PASSED=$(jq -r '.aggregate.passed' results.json)
-            TOTAL=$(jq -r '.aggregate.total' results.json)
+          if [ -f results.json ] && jq empty results.json 2>/dev/null; then
+            # Valid JSON file exists
+            SCORE=$(jq -r '.aggregate.normalized // 0' results.json)
+            PASSED=$(jq -r '.aggregate.passed // 0' results.json)
+            TOTAL=$(jq -r '.aggregate.total // 0' results.json)
             echo "score=$SCORE" >> $GITHUB_OUTPUT
             echo "passed=$PASSED" >> $GITHUB_OUTPUT
             echo "total=$TOTAL" >> $GITHUB_OUTPUT
           else
+            # No valid JSON, set defaults
+            echo "⚠️  No valid results.json found, using defaults"
             echo "score=0" >> $GITHUB_OUTPUT
             echo "passed=0" >> $GITHUB_OUTPUT
             echo "total=0" >> $GITHUB_OUTPUT
@@ -153,12 +165,25 @@ jobs:
 
           for dir in results/results-*; do
             if [ -f "$dir/results.json" ]; then
-              model=$(basename "$dir" | sed 's/results-//')
-              score=$(jq -r '.aggregate.normalized' "$dir/results.json")
-              passed=$(jq -r '.aggregate.passed' "$dir/results.json")
-              total=$(jq -r '.aggregate.total' "$dir/results.json")
-              percent=$(echo "scale=1; $passed * 100 / $total" | bc)
-              echo "| $model | $score | $passed | $total | ${percent}% |" >> summary.md
+              # Validate JSON before parsing
+              if jq empty "$dir/results.json" 2>/dev/null; then
+                model=$(basename "$dir" | sed 's/results-//')
+                score=$(jq -r '.aggregate.normalized // 0' "$dir/results.json")
+                passed=$(jq -r '.aggregate.passed // 0' "$dir/results.json")
+                total=$(jq -r '.aggregate.total // 1' "$dir/results.json")
+
+                # Avoid division by zero
+                if [ "$total" -gt 0 ]; then
+                  percent=$(echo "scale=1; $passed * 100 / $total" | bc)
+                else
+                  percent="0.0"
+                fi
+
+                echo "| $model | $score | $passed | $total | ${percent}% |" >> summary.md
+              else
+                model=$(basename "$dir" | sed 's/results-//')
+                echo "| $model | ERROR | - | - | - |" >> summary.md
+              fi
             fi
           done
 
