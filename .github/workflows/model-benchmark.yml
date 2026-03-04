@@ -22,6 +22,7 @@ jobs:
           - devstral-small-2:24b      # 24B, excels at tools & multi-file edits
           - rnj-1:8b                  # 8B, optimized for code and STEM
           - ministral-3:8b            # 8B, edge deployment with tool support
+          - ministral-3:3b-cloud       # 3B, cloud-optimized with tool support
           - minimax-m2.5              # ~230B, SOTA for productivity & coding
           - glm-5                     # ~744B, strong reasoning & agentic model
 
