@@ -75,7 +75,7 @@ export async function run() {
   await seedFile(tmpDir, "calculator.test.js", SEED_TEST);
 
   try {
-    const response = await runWithTimeout(
+    const _response = await runWithTimeout(
       agent,
       "The tests in calculator.test.js are failing. Run them, figure out what's wrong with calculator.js, fix the bugs, and re-run the tests until they pass.",
       meta.timeout,

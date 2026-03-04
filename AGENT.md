@@ -47,7 +47,6 @@ The agent is an EventEmitter that drives a loop: send messages to Ollama, check 
 | `context.js` | 126 | **Project context gathering.** `gatherContext(cwd, contextSize)` builds a string with: working directory, project type detection, file tree (2 levels), git branch/status, and AGENT.md excerpt. Injected into the system prompt on first `run()`. |
 | `context-manager.js` | 303 | **Context window management.** Tracks token usage, prunes conversation history when approaching limits, truncates large tool results, and handles context overflow errors from Ollama. |
 | `ollama.js` | 266 | Ollama API wrapper with streaming, rate limiting, and retry logic. Exports `createClient(host)`, `chatStream()`, `chatWithRetry()`, and `DEFAULT_MODEL`. |
-| `conversation-summarizer.js` | 83 | Token estimation utilities. `estimateTokenCount()` and `getTokenBreakdown()` for context management. |
 | `errors.js` | 64 | Shared error classification. `isContextOverflowError()` detects context limit errors. `classifyError()` categorizes errors as transient/model_error/logic_error for retry logic. |
 | `logger.js` | 159 | File-based logging to `.smol-agent/state/agent.log`. Log levels (debug/info/warn/error), controlled by `SMOL_AGENT_LOG_LEVEL` env var. |
 | `path-utils.js` | 43 | Path validation utilities. `resolveJailedPath()` and `validateJailedPath()` ensure file operations stay within the jail directory. |

@@ -31,7 +31,7 @@ export async function run() {
   await seedFile(tmpDir, "pricing.js", SEED_CODE);
 
   try {
-    const response = await runWithTimeout(
+    const _response = await runWithTimeout(
       agent,
       "Add JSDoc comments to the calculateDiscount function documenting params and return value",
       meta.timeout,

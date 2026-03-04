@@ -1,6 +1,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { loadCachedRepoMap, getRepoMapSummary } from "./repo-map.js";
+
+// Stub functions for repo-map integration (module may not exist)
+function loadCachedRepoMap(_cwd) {
+  return null;
+}
+
+function getRepoMapSummary(_repoMap, _cwd) {
+  return '';
+}
 
 /**
  * Get the current plan filename and content if one exists

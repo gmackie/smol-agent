@@ -51,7 +51,7 @@ export async function run() {
   await seedFile(tmpDir, "server.py", SEED_SERVER);
 
   try {
-    const response = await runWithTimeout(agent, TASK_PROMPT, meta.timeout);
+    const _response = await runWithTimeout(agent, TASK_PROMPT, meta.timeout);
 
     const content = (await readResult(tmpDir, "server.py")) || "";
 

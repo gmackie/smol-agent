@@ -9,7 +9,6 @@
  */
 
 import { logger } from './logger.js';
-import { estimateTokens } from './token-estimator.js';
 
 /**
  * Summarize old messages using an LLM call.

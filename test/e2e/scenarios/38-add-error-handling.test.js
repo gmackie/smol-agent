@@ -41,7 +41,7 @@ export async function run() {
   await seedFile(tmpDir, "user_service.py", SEED_CODE);
 
   try {
-    const response = await runWithTimeout(
+    const _response = await runWithTimeout(
       agent,
       `Add input validation and error handling to user_service.py:
 - get_user: user_id must be a positive integer, raise TypeError/ValueError otherwise

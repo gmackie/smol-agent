@@ -66,23 +66,23 @@ export default async function runRegistryTests() {
 
   await describe('validateToolArgs', async () => {
     await test('validates required arguments', async () => {
-      const result = registry.validateToolArgs('test', { required: ['foo'] }, {});
+      const result = registry.validateToolArgs('test', {}, { required: ['foo'] });
       assertFalse(result.valid, 'Should fail validation');
       assertContains(result.errors[0], 'Missing required argument: foo');
     });
 
     await test('passes with all required args', async () => {
-      const result = registry.validateToolArgs('test', 
-        { required: ['foo'], properties: { foo: { type: 'string' } } }, 
-        { foo: 'bar' }
+      const result = registry.validateToolArgs('test',
+        { foo: 'bar' },
+        { required: ['foo'], properties: { foo: { type: 'string' } } }
       );
       assertTrue(result.valid, 'Should pass validation');
     });
 
     await test('validates grep regex pattern', async () => {
-      const result = registry.validateToolArgs('grep', 
-        { properties: { pattern: { type: 'string' } } },
-        { pattern: '[invalid(regex' }
+      const result = registry.validateToolArgs('grep',
+        { pattern: '[invalid(regex' },
+        { properties: { pattern: { type: 'string' } } }
       );
       assertFalse(result.valid, 'Invalid regex should fail');
     });
@@ -90,14 +90,14 @@ export default async function runRegistryTests() {
     await test('validates run_command length', async () => {
       const longCmd = 'x'.repeat(10001);
       const result = registry.validateToolArgs('run_command',
-        { properties: { command: { type: 'string' } } },
-        { command: longCmd }
+        { command: longCmd },
+        { properties: { command: { type: 'string' } } }
       );
       assertFalse(result.valid, 'Long command should fail');
     });
 
     await test('rejects non-object args', async () => {
-      const result = registry.validateToolArgs('test', {}, null);
+      const result = registry.validateToolArgs('test', null, {});
       assertFalse(result.valid, 'Null args should fail');
     });
   });

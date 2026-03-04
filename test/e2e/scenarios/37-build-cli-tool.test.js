@@ -11,7 +11,7 @@ export async function run() {
   const events = collectEvents(agent);
 
   try {
-    const response = await runWithTimeout(
+    const _response = await runWithTimeout(
       agent,
       `Create a bash script called wordcount.sh that works like a simplified 'wc' command.
 It should:
@@ -25,7 +25,7 @@ After creating the script, create a sample.txt file with some text content (at l
     );
 
     const script = (await readResult(tmpDir, "wordcount.sh")) || "";
-    const sample = (await readResult(tmpDir, "sample.txt")) || "";
+    const _sample = (await readResult(tmpDir, "sample.txt")) || "";
 
     const scriptExists = fileExists(tmpDir, "wordcount.sh");
     const sampleExists = fileExists(tmpDir, "sample.txt");
@@ -43,7 +43,7 @@ After creating the script, create a sample.txt file with some text content (at l
     const computesCounts = /wc\b/.test(script) || /grep\s+-c/.test(script) ||
       /awk/.test(script) || /\$\(.*cat/.test(script);
 
-    const didWrite = events.anyToolCalled(["write_file"]);
+    const _didWrite = events.anyToolCalled(["write_file"]);
     const ranCommand = events.anyToolCalled(["run_command"]);
 
     // Check that the script was actually executed and produced count output

@@ -1,6 +1,6 @@
 import {
   createTestAgent, runWithTimeout, collectEvents,
-  scoreResult, check, seedFile, readResult, fileExists, cleanup,
+  scoreResult, check, seedFile, readResult, cleanup,
 } from "../harness.js";
 import { config } from "../config.js";
 
@@ -19,7 +19,7 @@ export async function run() {
   await seedFile(tmpDir, "config.js", SEED_CONFIG);
 
   try {
-    const response = await runWithTimeout(
+    const _response = await runWithTimeout(
       agent,
       "Move the hardcoded values to environment variables with process.env, and create a .env.example file showing the required variables",
       meta.timeout,

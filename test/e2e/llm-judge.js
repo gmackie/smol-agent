@@ -6,7 +6,7 @@
  */
 
 import { chatWithRetry, createClient } from "../../src/ollama.js";
-import { config } from "./config.js";
+import { config as _config } from "./config.js";
 
 // ── Action log builder ──────────────────────────────────────────────
 
@@ -66,19 +66,19 @@ export function parseJudgeResponse(text) {
   // Try raw JSON parse first
   const trimmed = text.trim();
   if (trimmed.startsWith("[")) {
-    try { return JSON.parse(trimmed); } catch {}
+    try { return JSON.parse(trimmed); } catch { /* expected */ }
   }
 
   // Try markdown-fenced JSON
   const fenced = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
   if (fenced) {
-    try { return JSON.parse(fenced[1].trim()); } catch {}
+    try { return JSON.parse(fenced[1].trim()); } catch { /* expected */ }
   }
 
   // Extract first [...] from text
   const bracket = trimmed.match(/\[[\s\S]*\]/);
   if (bracket) {
-    try { return JSON.parse(bracket[0]); } catch {}
+    try { return JSON.parse(bracket[0]); } catch { /* expected */ }
   }
 
   return null;

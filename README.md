@@ -17,6 +17,8 @@ smol-agent gives a local language model the tools it needs to read, write, and e
 - [Tools](#tools)
 - [Context Management](#context-management)
 - [Context Injection](#context-injection)
+- [Persistent Memory](#persistent-memory)
+- [Skills](#skills)
 - [Architecture](#architecture)
 - [Contributing](#contributing)
 - [Security](#security)
@@ -206,6 +208,10 @@ The agent has access to the following tools:
 | `complete_plan_step` | Mark a plan step as completed |
 | `update_plan_status` | Update plan status (in-progress, completed, paused, abandoned) |
 | `reflect` | Summarize work done, what went well, and areas for improvement |
+| `remember` | Save a fact/pattern/preference to persistent memory across sessions |
+| `recall` | Retrieve memories from persistent storage |
+| `save_context` | Save a dense summary of a directory/code area for future sessions |
+| `delegate` | Spawn a read-only sub-agent for focused research tasks |
 
 The model decides which tools to call and when. It will loop — calling tools and feeding results back in — until it produces a final text response.
 
@@ -231,6 +237,39 @@ When the agent starts (or after `/reset`), it automatically gathers context abou
 
 This means the model already knows your project layout, language, dependencies, and available scripts before you even ask your first question — so it can give better answers with fewer tool calls.
 
+## Persistent Memory
+
+smol-agent remembers things across sessions using three mechanisms, all stored in the `.smol-agent/` directory (gitignored by default):
+
+### Key-value memories (`.smol-agent/memory.json`)
+
+The agent can call `remember` to store facts like test commands, coding conventions, or project quirks. These are automatically loaded into the system prompt on startup. Use `recall` to retrieve them.
+
+### Context docs (`.smol-agent/docs/`)
+
+After exploring a directory, the agent can call `save_context` to write a short, dense summary (key files, exports, patterns). On next startup, the system prompt lists available docs so the agent can `read_file` them instead of re-exploring from scratch.
+
+### Skills (`.smol-agent/skills/`)
+
+Skills are user-authored markdown files that teach the agent domain-specific workflows. Create a `.md` file with YAML frontmatter:
+
+```markdown
+---
+name: testing
+description: How to run and write tests for this project
+---
+
+## Running tests
+npm test              # unit tests
+npm run test:e2e      # end-to-end tests
+
+## Conventions
+- Test files go in test/unit/ with .test.js suffix
+- Use the custom test-utils.js helpers (describe, test, assertEqual, etc.)
+```
+
+On startup, the agent sees the `name` and `description` from frontmatter in its system prompt. When a skill is relevant, it reads the full file for detailed instructions.
+
 ## Architecture
 
 ```
@@ -239,10 +278,10 @@ src/
 ├── agent.js              Agent loop (EventEmitter): prompt → LLM → tool calls → repeat
 ├── context.js            Project context gathering (file tree, git, configs, README)
 ├── context-manager.js    Token counting, context pruning, message summarization
-├── conversation-summarizer.js  Token estimation utilities
 ├── logger.js             Logging with configurable levels
 ├── ollama.js             Thin wrapper around the ollama npm package
 ├── path-utils.js         Path resolution and jail security
+├── skills.js             Skill loading and frontmatter parsing
 ├── plan-tracker.js       Plan state management and persistence
 ├── ui/
 │   ├── App.js            Ink (React) terminal UI — message log, spinner, input
@@ -259,7 +298,10 @@ src/
     ├── ask_user.js       Ask the user for clarification
     ├── plan_tools.js     Plan management tools
     ├── save_plan.js      Plan persistence utilities
-    └── reflection.js     Work reflection and summarization
+    ├── reflection.js     Work reflection and summarization
+    ├── memory.js         Persistent remember/recall across sessions
+    ├── context_docs.js   save_context tool for directory summaries
+    └── sub_agent.js      Delegate tool for focused sub-agent tasks
 ```
 
 Each tool file self-registers with the registry on import. The agent imports them all, and the registry serializes them into the format Ollama expects for tool-calling.

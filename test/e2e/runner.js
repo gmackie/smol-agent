@@ -20,7 +20,7 @@ import { config } from "./config.js";
 const args = process.argv.slice(2);
 const JSON_MODE = args.includes("--json");
 const NO_RETRY = args.includes("--no-retry");
-const VERBOSE = args.includes("--verbose");
+const _VERBOSE = args.includes("--verbose");
 const FILTER = (() => {
   const idx = args.indexOf("--filter");
   if (idx !== -1 && args[idx + 1]) return args[idx + 1];

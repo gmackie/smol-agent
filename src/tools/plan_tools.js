@@ -1,5 +1,5 @@
 import { register } from "./registry.js";
-import { savePlan, savePlanProgress, loadPlanProgress, getCurrentPlan, markPlanCompleted, updatePlanStatus } from "./save_plan.js";
+import { savePlan, savePlanProgress, loadPlanProgress, getCurrentPlan, updatePlanStatus } from "./save_plan.js";
 
 /**
  * Save a plan to a markdown file and track progress.
@@ -78,7 +78,7 @@ Returns success/failure with filename and filepath.`,
 /**
  * Load the current plan progress
  */
-async function executeLoadProgress({}, { cwd = process.cwd() } = {}) {
+async function executeLoadProgress(_args, { cwd = process.cwd() } = {}) {
   try {
     const progress = await loadPlanProgress(cwd);
     const current = await getCurrentPlan(cwd);
@@ -106,7 +106,7 @@ register("load_plan_progress", {
 /**
  * Get the current plan content from a saved file
  */
-async function executeGetCurrentPlanContent({}, { cwd = process.cwd() } = {}) {
+async function executeGetCurrentPlanContent(_args, { cwd = process.cwd() } = {}) {
   try {
     const current = await getCurrentPlan(cwd);
     

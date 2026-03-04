@@ -77,7 +77,7 @@ export async function run() {
   await seedFile(tmpDir, "data.json", SEED_DATA);
 
   try {
-    const response = await runWithTimeout(
+    const _response = await runWithTimeout(
       agent,
       "Run data_processor.py — it's crashing with an error. Debug the issue and fix the code so it handles all the data in data.json correctly. Run it again to verify it works.",
       meta.timeout,

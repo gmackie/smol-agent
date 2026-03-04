@@ -28,7 +28,7 @@ export async function run() {
   await seedFile(tmpDir, "utils.js", SEED_UTILS);
 
   try {
-    const response = await runWithTimeout(
+    const _response = await runWithTimeout(
       agent,
       "Move the formatNumber function to a new file called formatters.js and update the import in index.js",
       meta.timeout,

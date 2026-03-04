@@ -142,6 +142,7 @@ export class ContextManager {
     this.maxTokens = maxTokens;
     this.lastPromptTokens = 0; // Actual count from API when available
     this.lastCompletionTokens = 0;
+    this._messageCountAtLastUpdate = 0; // Track staleness of lastPromptTokens
     this.ollamaHost = null; // Host URL for LLM-based summarization
     this.llmModel = null;
   }
@@ -155,10 +156,13 @@ export class ContextManager {
   }
 
   /**
-   * Get current token usage (prefer API counts over estimates)
+   * Get current token usage (prefer API counts over estimates).
+   * Falls back to estimation if the cached count is stale (messages changed since last API update).
    */
   getUsage(messages) {
-    const used = this.lastPromptTokens || estimateTotalTokens(messages);
+    const messageCount = Array.isArray(messages) ? messages.length : 0;
+    const isStale = messageCount !== this._messageCountAtLastUpdate;
+    const used = (this.lastPromptTokens && !isStale) ? this.lastPromptTokens : estimateTotalTokens(messages);
     const percentage = Math.round((used / this.maxTokens) * 100);
     return {
       used,
@@ -185,51 +189,127 @@ export class ContextManager {
   /**
    * Truncate large tool results to prevent context bloat.
    * Preserves error messages and structured data better.
+   * @param {*} result - Tool result to truncate
+   * @param {number} [contextUsageRatio=0] - Current context usage ratio (0-1). Higher values shrink the ceiling.
    */
-  truncateToolResult(result) {
+  truncateToolResult(result, contextUsageRatio = 0) {
     if (!result) return result;
-    
+
+    // Adaptive ceiling: at 0% usage → 15000 chars, at 80%+ → 3000 chars
+    const effectiveMax = Math.floor(MAX_TOOL_RESULT_SIZE * Math.max(0.2, 1 - contextUsageRatio));
+
     const str = typeof result === 'string' ? result : JSON.stringify(result);
-    
-    if (str.length <= MAX_TOOL_RESULT_SIZE) {
+
+    if (str.length <= effectiveMax) {
       return result;
     }
-    
+
     // For error results, try to preserve the full error
     if (typeof result === 'object' && result?.error) {
       const errorStr = JSON.stringify({ error: result.error });
-      if (errorStr.length < MAX_TOOL_RESULT_SIZE) {
+      if (errorStr.length < effectiveMax) {
         return { error: result.error, truncated: true };
       }
     }
-    
-    // For file content, preserve beginning and end
+
+    // For file content, preserve beginning and end (scale keepLines with ceiling)
     const lines = str.split('\n');
-    if (lines.length > 100) {
+    const keepLines = Math.max(10, Math.floor(50 * Math.max(0.2, 1 - contextUsageRatio)));
+    if (lines.length > keepLines * 2) {
       const kept = [
-        ...lines.slice(0, 50),
-        `... [${lines.length - 100} lines omitted] ...`,
-        ...lines.slice(-50)
+        ...lines.slice(0, keepLines),
+        `... [${lines.length - keepLines * 2} lines omitted] ...`,
+        ...lines.slice(-keepLines)
       ];
       const truncated = kept.join('\n');
       const indicator = '\n\n[... output truncated to save context space ...]';
-      
+
       logger.warn(`Truncated large tool result (${str.length} -> ${truncated.length} chars, ${lines.length} -> ${kept.length} lines)`);
-      
-      return typeof result === 'string' 
-        ? truncated + indicator 
+
+      return typeof result === 'string'
+        ? truncated + indicator
         : { truncated: true, content: truncated + indicator };
     }
-    
+
     // Standard truncation
-    const truncated = str.substring(0, MAX_TOOL_RESULT_SIZE);
+    const truncated = str.substring(0, effectiveMax);
     const indicator = '\n\n[... output truncated to save context space ...]';
-    
+
     logger.warn(`Truncated large tool result (${str.length} -> ${truncated.length} chars)`);
-    
-    return typeof result === 'string' 
-      ? truncated + indicator 
+
+    return typeof result === 'string'
+      ? truncated + indicator
       : { truncated: true, content: truncated + indicator };
+  }
+
+  /**
+   * Progressively compress old tool results AND assistant messages in-place to save tokens.
+   * Cheap to call every iteration — only mutates messages older than a threshold.
+   *
+   * Tool result thresholds (age = messages.length - index):
+   *   > 40: truncate to 200 chars
+   *   > 20: truncate to 500 chars
+   *   > 10: truncate to 2000 chars
+   *
+   * Assistant message thresholds:
+   *   > 40: truncate to 200 chars
+   *   > 20: truncate to 500 chars
+   *
+   * Never compresses: error tool results, assistant messages with tool_calls, user/system messages.
+   */
+  compressOldMessages(messages) {
+    const len = messages.length;
+    let compressed = 0;
+
+    for (let i = 0; i < len; i++) {
+      const msg = messages[i];
+      if (!msg.content) continue;
+
+      const age = len - i;
+
+      if (msg.role === 'tool') {
+        // Never compress error results
+        try {
+          const parsed = JSON.parse(msg.content);
+          if (parsed?.error) continue;
+        } catch { /* not JSON, proceed */ }
+
+        let maxChars;
+        if (age > 40) maxChars = 200;
+        else if (age > 20) maxChars = 500;
+        else if (age > 10) maxChars = 2000;
+        else continue; // too recent
+
+        if (msg.content.length > maxChars) {
+          msg.content = msg.content.substring(0, maxChars) + '\n[... compressed — old tool result ...]';
+          compressed++;
+        }
+      } else if (msg.role === 'assistant') {
+        // Never compress assistant messages with tool_calls (structural)
+        if (msg.tool_calls) continue;
+
+        let maxChars;
+        if (age > 40) maxChars = 200;
+        else if (age > 20) maxChars = 500;
+        else continue; // too recent for assistant messages
+
+        if (msg.content.length > maxChars) {
+          msg.content = msg.content.substring(0, maxChars) + '\n[... compressed — old assistant message ...]';
+          compressed++;
+        }
+      }
+      // Never compress user or system messages
+    }
+
+    if (compressed > 0) {
+      logger.info(`Compressed ${compressed} old messages`);
+    }
+    return compressed;
+  }
+
+  /** @deprecated Use compressOldMessages instead */
+  compressOldToolResults(messages) {
+    return this.compressOldMessages(messages);
   }
 
   /**
@@ -253,10 +333,14 @@ export class ContextManager {
     const systemMsg = keepSystem && messages[0]?.role === 'system' ? messages[0] : null;
     const restMessages = keepSystem && systemMsg ? messages.slice(1) : messages;
 
+    // Subtract system prompt size from budget — it's always present and can't be pruned
+    const systemTokens = systemMsg ? estimateMessageTokens(systemMsg) : 0;
+    const availableTokens = this.maxTokens - systemTokens;
+
     // Calculate how many messages to keep based on current usage
     const overageRatio = status.usage.percentage / 100;
     const targetPercentage = aggressive || overageRatio > 1.5 ? 0.30 : 0.50;
-    const targetTokens = Math.floor(this.maxTokens * targetPercentage);
+    const targetTokens = Math.floor(availableTokens * targetPercentage);
 
     // Score messages by importance
     const scoredMessages = restMessages.map((msg, index) => ({
@@ -458,11 +542,15 @@ export class ContextManager {
   }
 
   /**
-   * Update token counts from API response
+   * Update token counts from API response.
+   * @param {number} promptTokens
+   * @param {number} completionTokens
+   * @param {number} [messageCount] — current messages.length, used for staleness detection
    */
-  updateFromAPI(promptTokens, completionTokens) {
+  updateFromAPI(promptTokens, completionTokens, messageCount) {
     if (promptTokens) this.lastPromptTokens = promptTokens;
     if (completionTokens) this.lastCompletionTokens = completionTokens;
+    if (messageCount != null) this._messageCountAtLastUpdate = messageCount;
   }
 
   /**
@@ -471,6 +559,7 @@ export class ContextManager {
   reset() {
     this.lastPromptTokens = 0;
     this.lastCompletionTokens = 0;
+    this._messageCountAtLastUpdate = 0;
   }
 
   /** Proxy to shared isContextOverflowError — preserves call site in agent.js */
@@ -483,25 +572,24 @@ export class ContextManager {
    */
   handleOverflow(messages) {
     logger.warn('Context overflow detected - performing aggressive pruning');
-    
+
     // Aggressive pruning - keep only very recent messages
-    const pruned = this.pruneMessages(messages, { aggressive: true });
-    
-    // If still too long, summarize
-    const status = this.getStatus(pruned);
+    const { messages: prunedMessages } = this.pruneMessages(messages, { aggressive: true });
+
+    // If still too long, do emergency reduction
+    const status = this.getStatus(prunedMessages);
     if (status.isCritical) {
-      // Keep only system + last few messages
-      const systemMsg = pruned[0]?.role === 'system' ? pruned[0] : null;
-      const rest = systemMsg ? pruned.slice(1) : pruned;
-      
+      const systemMsg = prunedMessages[0]?.role === 'system' ? prunedMessages[0] : null;
+      const rest = systemMsg ? prunedMessages.slice(1) : prunedMessages;
+
       if (rest.length > MIN_KEEP_MESSAGES) {
         const minimal = rest.slice(-MIN_KEEP_MESSAGES);
         logger.warn(`Emergency context reduction: keeping only ${minimal.length} recent messages`);
         return systemMsg ? [systemMsg, ...minimal] : minimal;
       }
     }
-    
-    return pruned;
+
+    return prunedMessages;
   }
 }
 

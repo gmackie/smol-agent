@@ -70,7 +70,7 @@ export async function run() {
   await seedFile(tmpDir, "test_linked_list.py", SEED_TEST);
 
   try {
-    const response = await runWithTimeout(
+    const _response = await runWithTimeout(
       agent,
       "There's a test file test_linked_list.py that tests a LinkedList class. Implement linked_list.py so that all the tests pass. Run the tests to verify.",
       meta.timeout,

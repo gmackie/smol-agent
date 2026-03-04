@@ -135,7 +135,7 @@ export function extendedToolNames() {
  * Uses the global jail directory for security - the cwd parameter from callers
  * is ignored to prevent jail escape attempts.
  */
-export async function execute(name, args, options = {}) {
+export async function execute(name, args, _options = {}) {
   const tool = tools.get(name);
   if (!tool) {
     logger.error(`Unknown tool: ${name}`);

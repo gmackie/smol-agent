@@ -51,7 +51,7 @@ export async function run() {
   await seedFile(tmpDir, "reverse.cpp", SEED_CODE);
 
   try {
-    const response = await runWithTimeout(
+    const _response = await runWithTimeout(
       agent,
       "The file reverse.cpp has bugs — it may crash or produce garbled output. Read the code, identify the bugs, fix them, then compile with g++ and run it to verify it works correctly. The expected output should show each word reversed (hello -> olleh, world -> dlrow, test -> tset).",
       meta.timeout,
@@ -81,7 +81,7 @@ export async function run() {
 
     const didRead = events.anyToolCalled(["read_file"]);
     const didEdit = events.anyToolCalled(["replace_in_file", "write_file"]);
-    const ranCommand = events.anyToolCalled(["run_command"]);
+    const _ranCommand = events.anyToolCalled(["run_command"]);
 
     // Check that it compiled and ran successfully
     const runResults = events.resultsFor("run_command")

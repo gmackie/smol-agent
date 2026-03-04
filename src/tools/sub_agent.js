@@ -33,6 +33,7 @@ export function setSubAgentConfig(cfg) {
 
 const READ_ONLY_TOOLS = new Set(["read_file", "list_files", "grep"]);
 const MAX_ITERATIONS = 15;
+const MAX_TOOL_RESULT_SIZE = 8000;
 
 /**
  * Strip <thinking>...</thinking> tags from content to save context tokens.
@@ -190,8 +191,8 @@ ${context ? `\nContext: ${context}` : ""}`;
           const str = JSON.stringify(result);
           // Truncate large results for sub-agent's smaller context
           const truncated =
-            str.length > 8000
-              ? str.substring(0, 8000) + "\n[truncated]"
+            str.length > MAX_TOOL_RESULT_SIZE
+              ? str.substring(0, MAX_TOOL_RESULT_SIZE) + "\n[truncated]"
               : str;
           messages.push({ role: "tool", content: truncated });
         }

@@ -1,6 +1,10 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { register } from "./registry.js";
 import { resolveJailedPath } from "../path-utils.js";
+
+const MAX_MATCHES = 200;
+const TIMEOUT_MS = 15_000;
+const MAX_BUFFER = 512 * 1024;
 
 register("grep", {
   description:
@@ -26,26 +30,24 @@ register("grep", {
     },
   },
   async execute({ pattern, path: searchPath, include }, { cwd = process.cwd() } = {}) {
-    // Resolve the search path against the jail directory
     const resolvedSearchPath = searchPath
       ? resolveJailedPath(cwd, searchPath)
       : cwd;
-      
+
     const args = ["-rn", "--color=never"];
     if (include) args.push(`--include=${include}`);
     args.push(pattern);
     args.push(resolvedSearchPath);
-    const cmd = `grep ${args.map((a) => JSON.stringify(a)).join(" ")}`;
 
     try {
-      const stdout = execSync(cmd, {
+      const stdout = execFileSync("grep", args, {
         encoding: "utf-8",
-        timeout: 15_000,
-        maxBuffer: 512 * 1024,
+        timeout: TIMEOUT_MS,
+        maxBuffer: MAX_BUFFER,
         stdio: ["pipe", "pipe", "pipe"],
       });
       const lines = stdout.trim().split("\n");
-      return { matches: lines.slice(0, 200) };
+      return { matches: lines.slice(0, MAX_MATCHES) };
     } catch (err) {
       if (err.status === 1) {
         return { matches: [] }; // no matches

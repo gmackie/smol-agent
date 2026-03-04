@@ -66,7 +66,7 @@ export async function run() {
   await seedFile(tmpDir, "routes/status.js", SEED_STATUS);
 
   try {
-    const response = await runWithTimeout(agent, TASK_PROMPT, meta.timeout);
+    const _response = await runWithTimeout(agent, TASK_PROMPT, meta.timeout);
 
     const serverContent = (await readResult(tmpDir, "server.js")) || "";
     const usersContent = (await readResult(tmpDir, "routes/users.js")) || "";

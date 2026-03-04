@@ -20,7 +20,7 @@ export async function run() {
   await seedFile(tmpDir, "project/data/config.json", '{"key": "value", "debug": false}\n');
 
   try {
-    const response = await runWithTimeout(
+    const _response = await runWithTimeout(
       agent,
       `Create a Node.js script called dir-stats.js that recursively walks a directory and outputs stats:
 - Total number of files

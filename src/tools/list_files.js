@@ -2,6 +2,8 @@ import { register } from "./registry.js";
 import { resolveJailedPath } from "../path-utils.js";
 import { glob } from "glob";
 
+const MAX_FILES = 500;
+
 register("list_files", {
   description:
     "List files matching a glob pattern. Returns file paths relative to the project root. Use this to discover project structure, find files by extension, or explore directories.",
@@ -40,12 +42,11 @@ register("list_files", {
 
     files.sort();
 
-    const MAX = 500;
     return {
       pattern,
       count: files.length,
-      files: files.slice(0, MAX),
-      truncated: files.length > MAX,
+      files: files.slice(0, MAX_FILES),
+      truncated: files.length > MAX_FILES,
     };
   },
 });

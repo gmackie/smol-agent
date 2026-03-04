@@ -1,5 +1,4 @@
 import React from "react";
-import { render } from "ink";
 import { Markdown } from "../src/ui/markdown.js";
 
 // Test comprehensive markdown content
@@ -45,7 +44,7 @@ try {
   console.log("✓ Markdown component imported successfully");
   
   // Test basic functionality
-  const fakeElement = React.createElement(Markdown, null, testContent);
+  const _fakeElement = React.createElement(Markdown, null, testContent);
   console.log("✓ Markdown component creates element successfully");
   
   console.log("\nTest content preview:");

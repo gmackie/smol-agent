@@ -40,7 +40,7 @@ export async function run() {
   await seedFile(tmpDir, "server.js", SEED_SERVER);
 
   try {
-    const response = await runWithTimeout(
+    const _response = await runWithTimeout(
       agent,
       "Run server.js — it has bugs. Fix them all, start the server, then curl GET /health and verify the JSON response contains \"status\": \"ok\".",
       meta.timeout,

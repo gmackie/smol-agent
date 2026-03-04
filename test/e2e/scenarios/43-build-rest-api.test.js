@@ -1,6 +1,6 @@
 import {
   createTestAgent, runWithTimeout, collectEvents,
-  scoreResult, check, seedFile, readResult, fileExists, cleanup,
+  scoreResult, check, readResult, fileExists, cleanup,
 } from "../harness.js";
 import { config } from "../config.js";
 import { buildActionLog, llmJudge } from "../llm-judge.js";
@@ -20,7 +20,7 @@ export async function run() {
   const events = collectEvents(agent);
 
   try {
-    const response = await runWithTimeout(agent, TASK_PROMPT, meta.timeout);
+    const _response = await runWithTimeout(agent, TASK_PROMPT, meta.timeout);
 
     const content = (await readResult(tmpDir, "server.js")) || "";
 

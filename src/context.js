@@ -3,6 +3,8 @@ import path from "node:path";
 import { execSync } from "node:child_process";
 import { loadMemories } from "./tools/memory.js";
 import { loadContextDocs } from "./tools/context_docs.js";
+import { loadSkills } from "./skills.js";
+import { logger } from "./logger.js";
 
 const IGNORED = new Set([
   "node_modules", ".git", "__pycache__", ".next", "dist", "build",
@@ -50,12 +52,19 @@ export async function gatherContext(cwd, contextSize = 100) {
       const suffix = keys.length > 20 ? `\n- ... and ${keys.length - 20} more (use recall tool)` : "";
       sections.push(`## Memories from previous sessions\n${memLines.join("\n")}${suffix}`);
     }
-  } catch { /* no memories */ }
+  } catch (err) { logger.debug(`No memories loaded: ${err.message}`); }
 
   // 7. Codebase context docs from previous sessions
   const docs = await loadContextDocs(cwd);
   if (docs.length > 0) {
     sections.push(`## Codebase context docs\nAvailable: ${docs.join(", ")}\nCheck .smol-agent/docs/<name>.md before exploring a directory.`);
+  }
+
+  // 8. Skills from .smol-agent/skills/
+  const skills = await loadSkills(cwd);
+  if (skills.length > 0) {
+    const lines = skills.map(s => `- **${s.name}**: ${s.description}`);
+    sections.push(`## Skills\n${lines.join("\n")}\nRead .smol-agent/skills/<file>.md before starting a task if a relevant skill exists.`);
   }
 
   return sections.join("\n\n");

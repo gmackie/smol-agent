@@ -5,7 +5,7 @@ import { Agent } from "./agent.js";
 import { setAskHandler } from "./tools/ask_user.js";
 import { loadSettings } from "./settings.js";
 import { logger } from "./logger.js";
-import * as registry from "./tools/registry.js";
+import "./tools/registry.js";
 
 // ── Tool kind mapping ───────────────────────────────────────────────
 

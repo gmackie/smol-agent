@@ -1,6 +1,6 @@
 import {
   createTestAgent, runWithTimeout, collectEvents,
-  scoreResult, check, seedFile, readResult, fileExists, cleanup,
+  scoreResult, check, seedFile, readResult, cleanup,
 } from "../harness.js";
 import { config } from "../config.js";
 
@@ -31,7 +31,7 @@ export async function run() {
   await seedFile(tmpDir, "math.js", SEED_CODE);
 
   try {
-    const response = await runWithTimeout(
+    const _response = await runWithTimeout(
       agent,
       "Create a test file math.test.js with test cases for both functions",
       meta.timeout,

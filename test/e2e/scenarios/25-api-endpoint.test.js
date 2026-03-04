@@ -23,7 +23,7 @@ export async function run() {
   await seedFile(tmpDir, "server.js", SEED_SERVER);
 
   try {
-    const response = await runWithTimeout(
+    const _response = await runWithTimeout(
       agent,
       "Add a GET /api/status endpoint that returns JSON with { status: 'ok', timestamp: <current-time> }",
       meta.timeout,

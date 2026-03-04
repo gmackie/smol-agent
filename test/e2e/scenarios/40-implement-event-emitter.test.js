@@ -82,7 +82,7 @@ export async function run() {
   await seedFile(tmpDir, "test_emitter.py", SEED_TEST);
 
   try {
-    const response = await runWithTimeout(
+    const _response = await runWithTimeout(
       agent,
       "There's a test file test_emitter.py that tests a custom EventEmitter class. Implement emitter.py with the EventEmitter class so that all tests pass. Run the tests to verify.",
       meta.timeout,

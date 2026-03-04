@@ -17,7 +17,7 @@ export function resolveJailedPath(basePath, targetPath) {
   let realBase;
   try {
     realBase = fs.realpathSync(basePath);
-  } catch (err) {
+  } catch (_err) {
     throw new Error(`Jail directory does not exist or is not accessible: ${basePath}`);
   }
   
@@ -26,14 +26,14 @@ export function resolveJailedPath(basePath, targetPath) {
   let realTarget;
   try {
     realTarget = fs.realpathSync(resolvedPath);
-  } catch (err) {
+  } catch (_err) {
     // Path doesn't exist yet - validate the parent directory
     // and check that the eventual path would be within jail
     const parentDir = path.dirname(resolvedPath);
     try {
       const realParent = fs.realpathSync(parentDir);
       realTarget = path.join(realParent, path.basename(resolvedPath));
-    } catch (parentErr) {
+    } catch (_parentErr) {
       // Parent doesn't exist either - fall back to resolved path
       // This is safe because we'll still check it doesn't escape
       realTarget = resolvedPath;
@@ -43,11 +43,11 @@ export function resolveJailedPath(basePath, targetPath) {
   // Check if the real target path is within the real base path
   const relative = path.relative(realBase, realTarget);
   
-  // If the relative path starts with '..' or is absolute, it escapes the jail
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+  // If the relative path starts with '..', it escapes the jail
+  if (relative.startsWith("..")) {
     throw new Error(`Path '${targetPath}' escapes the jail directory`);
   }
-  
+
   return resolvedPath;
 }
 

@@ -34,7 +34,7 @@ export async function run() {
   await seedFile(tmpDir, "user.js", SEED_CODE);
 
   try {
-    const response = await runWithTimeout(
+    const _response = await runWithTimeout(
       agent,
       "Extract the validation logic into a separate 'validateUser' function",
       meta.timeout,

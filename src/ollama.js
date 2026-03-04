@@ -1,10 +1,10 @@
 import { Ollama } from "ollama";
-import { logger, isTransientError } from "./logger.js";
-import { isContextOverflowError, classifyError } from "./errors.js";
+import { classifyError, isContextOverflowError } from "./errors.js";
 
 const DEFAULT_MODEL = process.env.SMOL_AGENT_MODEL || "qwen2.5-coder:32b";
 const DEFAULT_MAX_TOKENS = 128000;
 const MAX_RETRIES = 3;
+const MIN_CONTEXT = 16384;
 
 // ── Rate limiting ────────────────────────────────────────────────────
 
@@ -95,44 +95,40 @@ export function estimateTokenCount(messages) {
   return Math.ceil(chars / 4);
 }
 
-// ── Streaming chat ───────────────────────────────────────────────────
+/**
+ * Calculate num_ctx for the Ollama request.
+ * Scales with conversation size but keeps a floor and ceiling.
+ */
+function calculateNumCtx(messages, maxTokens) {
+  const estTokens = estimateTokenCount(messages);
+  return Math.min(Math.max(Math.ceil(estTokens * 1.5), MIN_CONTEXT), maxTokens);
+}
+
+// ── Retry logic ─────────────────────────────────────────────────────
 
 /**
- * Open a streaming chat connection with retry on connection failure.
- * Returns the raw async-iterable stream from the Ollama client.
+ * Execute an async function with retry, rate limiting, and error classification.
+ * Handles context overflow (no retry), 429s (backoff), and transient errors.
+ *
+ * @param {Function} fn — async function to execute
+ * @param {number} maxRetries
+ * @param {Function} [onRetry] — called before each retry sleep: onRetry({ attempt, maxRetries, error, delayMs })
  */
-async function connectStream(client, model, messages, tools, signal, maxTokens, maxRetries = MAX_RETRIES) {
+async function withRetry(fn, maxRetries = MAX_RETRIES, onRetry) {
   let lastError;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       await waitForRateLimit();
-
-      const estTokens = estimateTokenCount(messages);
-      // Scale context window with conversation size, but keep a floor and ceiling.
-      // Avoids always maxing out (wastes VRAM/degrades quality on small models).
-      const numCtx = Math.min(
-        Math.max(Math.ceil(estTokens * 1.5), 16384),
-        maxTokens,
-      );
-
-      const stream = await client.chat({
-        model: model || DEFAULT_MODEL,
-        messages,
-        tools,
-        stream: true,
-        options: { num_ctx: numCtx },
-        signal,
-      });
-
+      const result = await fn();
       recent429Count = 0;
-      return stream;
+      return result;
     } catch (err) {
       lastError = err;
 
-      // Context overflow errors should not be retried - need to prune messages
+      // Context overflow errors should not be retried — need to prune messages
       if (isContextOverflowError(err)) {
-        const error = new Error('Context limit exceeded');
-        error.code = 'CONTEXT_OVERFLOW';
+        const error = new Error("Context limit exceeded");
+        error.code = "CONTEXT_OVERFLOW";
         error.originalError = err;
         throw error;
       }
@@ -141,13 +137,17 @@ async function connectStream(client, model, messages, tools, signal, maxTokens, 
         recent429Count++;
         last429Time = Date.now();
         if (attempt < maxRetries) {
-          await new Promise((r) => setTimeout(r, rateLimitBackoff(attempt)));
+          const delayMs = rateLimitBackoff(attempt);
+          onRetry?.({ attempt, maxRetries, error: err, delayMs });
+          await new Promise((r) => setTimeout(r, delayMs));
           continue;
         }
       }
 
-      if (attempt < maxRetries && isTransientError(err)) {
-        await new Promise((r) => setTimeout(r, Math.random() * Math.pow(2, attempt) * 200));
+      if (attempt < maxRetries && classifyError(err) === 'transient') {
+        const delayMs = Math.random() * Math.pow(2, attempt) * 200;
+        onRetry?.({ attempt, maxRetries, error: err, delayMs });
+        await new Promise((r) => setTimeout(r, delayMs));
         continue;
       }
 
@@ -157,19 +157,36 @@ async function connectStream(client, model, messages, tools, signal, maxTokens, 
   throw lastError;
 }
 
+// ── Streaming chat ───────────────────────────────────────────────────
+
 /**
  * Streaming chat — async generator that yields:
- *   { type: "token",  content: string }        for each text chunk
+ *   { type: "token",  content: string }
  *   { type: "done",   toolCalls: [], tokenUsage: { promptTokens, completionTokens } }
  *
  * Retry logic covers connection establishment only; once the stream is
  * open and tokens are flowing, a mid-stream failure will propagate.
+ *
+ * @param {Function} [onRetry] — forwarded to withRetry
  */
 export async function* chatStream(
   client, model, messages, tools, signal,
-  maxTokens = DEFAULT_MAX_TOKENS,
+  maxTokens = DEFAULT_MAX_TOKENS, onRetry,
 ) {
-  const stream = await connectStream(client, model, messages, tools, signal, maxTokens);
+  const numCtx = calculateNumCtx(messages, maxTokens);
+
+  const stream = await withRetry(() =>
+    client.chat({
+      model: model || DEFAULT_MODEL,
+      messages,
+      tools,
+      stream: true,
+      options: { num_ctx: numCtx },
+      signal,
+    }),
+    MAX_RETRIES,
+    onRetry,
+  );
 
   // Accumulate tool_calls across ALL chunks — some models send them on
   // intermediate chunks before the final done=true chunk.
@@ -201,65 +218,36 @@ export async function* chatStream(
   yield { type: "done", toolCalls: accumulatedToolCalls, tokenUsage: { promptTokens: 0, completionTokens: 0 } };
 }
 
-// ── Non-streaming chat (kept for backward compat / simple calls) ────
+// ── Non-streaming chat (kept for sub-agent / simple calls) ───────────
 
 export async function chatWithRetry(
   client, model, messages, tools, signal,
-  maxTokens = DEFAULT_MAX_TOKENS, maxRetries = MAX_RETRIES,
+  maxTokens = DEFAULT_MAX_TOKENS, onRetry,
 ) {
-  let lastError;
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      await waitForRateLimit();
+  const numCtx = calculateNumCtx(messages, maxTokens);
 
-      const estTokens = estimateTokenCount(messages);
-      // Scale context window with conversation size, but keep a floor and ceiling.
-      // Avoids always maxing out (wastes VRAM/degrades quality on small models).
-      const numCtx = Math.min(
-        Math.max(Math.ceil(estTokens * 1.5), 16384),
-        maxTokens,
-      );
+  return withRetry(() =>
+    client.chat({
+      model: model || DEFAULT_MODEL,
+      messages,
+      tools,
+      stream: false,
+      options: { num_ctx: numCtx },
+      signal,
+    }),
+    MAX_RETRIES,
+    onRetry,
+  );
+}
 
-      const response = await client.chat({
-        model: model || DEFAULT_MODEL,
-        messages,
-        tools,
-        stream: false,
-        options: { num_ctx: numCtx },
-        signal,
-      });
-
-      recent429Count = 0;
-      return response;
-    } catch (err) {
-      lastError = err;
-
-      // Context overflow errors should not be retried
-      if (isContextOverflowError(err)) {
-        const error = new Error('Context limit exceeded');
-        error.code = 'CONTEXT_OVERFLOW';
-        error.originalError = err;
-        throw error;
-      }
-
-      if (err.status === 429 || err.message?.includes("rate limit")) {
-        recent429Count++;
-        last429Time = Date.now();
-        if (attempt < maxRetries) {
-          await new Promise((r) => setTimeout(r, rateLimitBackoff(attempt)));
-          continue;
-        }
-      }
-
-      if (attempt < maxRetries && isTransientError(err)) {
-        await new Promise((r) => setTimeout(r, Math.random() * Math.pow(2, attempt) * 200));
-        continue;
-      }
-
-      throw err;
-    }
+/** List available models from Ollama. */
+export async function listModels(client) {
+  try {
+    const response = await client.list();
+    return response.models || [];
+  } catch {
+    return [];
   }
-  throw lastError;
 }
 
 export { DEFAULT_MODEL };

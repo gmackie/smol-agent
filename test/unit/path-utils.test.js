@@ -3,7 +3,7 @@
  * Tests the jail boundary security logic
  */
 
-import { describe, test, assertEqual, assertTrue, assertFalse, assertThrows, createTempDir, cleanupTempDir, createTestFile } from '../test-utils.js';
+import { describe, test, assertEqual, assertTrue, assertThrows, createTempDir, cleanupTempDir, createTestFile } from '../test-utils.js';
 import { resolveJailedPath, validateJailedPath } from '../../src/path-utils.js';
 import fs from 'node:fs';
 import path from 'node:path';

@@ -3,6 +3,8 @@ import path from "node:path";
 import { register } from "./registry.js";
 import { resolveJailedPath } from "../path-utils.js";
 
+const BINARY_PROBE_SIZE = 8192;
+
 // ── Whitespace-normalized matching helper ────────────────────────────
 
 function normalizeWS(text) {
@@ -44,8 +46,8 @@ register("read_file", {
       return { error: `Path is a directory, not a file: ${filePath}` };
     }
 
-    // Binary file detection — probe first 8 KB for null bytes
-    const probe = Buffer.alloc(Math.min(8192, stat.size));
+    // Binary file detection — probe first bytes for null bytes
+    const probe = Buffer.alloc(Math.min(BINARY_PROBE_SIZE, stat.size));
     const fd = fs.openSync(resolved, 'r');
     try {
       fs.readSync(fd, probe, 0, probe.length, 0);

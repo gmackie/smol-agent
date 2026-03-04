@@ -11,9 +11,8 @@ const DOCS_DIR = ".smol-agent/docs";
  */
 function sanitizePath(p) {
   return p
-    .replace(/^\/+|\/+$/g, "")
-    .replace(/\//g, "-")
-    .replace(/^\.+/, "");
+    .replace(/^[./\\]+|\/+$/g, "")
+    .replace(/\//g, "-");
 }
 
 /**

@@ -8,11 +8,11 @@ export const meta = { name: "multi-turn", timeout: config.timeouts.complex };
 
 export async function run() {
   const { agent, tmpDir } = createTestAgent();
-  const events = collectEvents(agent);
+  const _events = collectEvents(agent);
 
   try {
     // Turn 1: create a file
-    const r1 = await runWithTimeout(
+    const _r1 = await runWithTimeout(
       agent,
       'Create a file "counter.js" that exports a variable count set to 0 and a function increment() that adds 1 to count and returns it.',
       meta.timeout,
@@ -23,7 +23,7 @@ export async function run() {
     const hasIncrement = /increment/.test(content1);
 
     // Turn 2: modify the same file, referencing turn 1's context
-    const r2 = await runWithTimeout(
+    const _r2 = await runWithTimeout(
       agent,
       'Now add a decrement() function to counter.js that subtracts 1 from count and returns it. Keep the existing code.',
       meta.timeout,
@@ -32,7 +32,7 @@ export async function run() {
     const content2 = (await readResult(tmpDir, "counter.js")) || "";
     const hasDecrement = /decrement/.test(content2);
     const stillHasIncrement = /increment/.test(content2);
-    const hasBoth = hasDecrement && stillHasIncrement;
+    const _hasBoth = hasDecrement && stillHasIncrement;
 
     // Verify the agent used the same conversation (messages grew)
     const msgCount = agent.getMessages().length;

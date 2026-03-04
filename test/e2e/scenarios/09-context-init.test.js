@@ -8,7 +8,7 @@ export const meta = { name: "context-init", timeout: config.timeouts.simple };
 
 export async function run() {
   const { agent, tmpDir } = createTestAgent();
-  const events = collectEvents(agent);
+  const _events = collectEvents(agent);
   await seedFile(
     tmpDir,
     "package.json",

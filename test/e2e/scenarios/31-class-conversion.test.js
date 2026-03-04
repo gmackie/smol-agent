@@ -33,7 +33,7 @@ export async function run() {
   await seedFile(tmpDir, "Counter.js", SEED_CODE);
 
   try {
-    const response = await runWithTimeout(
+    const _response = await runWithTimeout(
       agent,
       "Convert this constructor function to use ES6 class syntax",
       meta.timeout,

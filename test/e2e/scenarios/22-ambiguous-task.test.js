@@ -1,6 +1,6 @@
 import {
   createTestAgent, runWithTimeout, collectEvents,
-  scoreResult, check, seedFile, readResult, fileExists, cleanup,
+  scoreResult, check, seedFile, readResult, cleanup,
 } from "../harness.js";
 import { config } from "../config.js";
 
@@ -23,7 +23,7 @@ export async function run() {
 
   try {
     // Deliberately vague — the agent should explore first, then make reasonable improvements
-    const response = await runWithTimeout(
+    const _response = await runWithTimeout(
       agent,
       "This server needs some improvements. Add proper error handling and make it more robust.",
       meta.timeout,

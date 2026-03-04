@@ -27,7 +27,7 @@ export async function run() {
   await seedFile(tmpDir, "config-io.js", SEED_CODE);
 
   try {
-    const response = await runWithTimeout(
+    const _response = await runWithTimeout(
       agent,
       "Refactor these functions to use async/await with fs.promises instead of sync operations",
       meta.timeout,

@@ -8,7 +8,7 @@ export const meta = { name: "nested-directory", timeout: config.timeouts.medium 
 
 export async function run() {
   const { agent, tmpDir } = createTestAgent();
-  const events = collectEvents(agent);
+  const _events = collectEvents(agent);
 
   try {
     await runWithTimeout(

@@ -3,9 +3,10 @@ import * as ollama from "./ollama.js";
 import * as registry from "./tools/registry.js";
 import { gatherContext } from "./context.js";
 import { logger } from "./logger.js";
-import { ContextManager, getContextConfig } from "./context-manager.js";
+import { ContextManager } from "./context-manager.js";
 import { getCurrentPlan } from "./tools/save_plan.js";
 import { parseToolCallsFromContent } from "./tool-call-parser.js";
+import { classifyError, formatUserError } from "./errors.js";
 
 // Import all tools so they self-register
 import "./tools/run_command.js";
@@ -133,6 +134,7 @@ Then immediately call a tool — do NOT narrate after thinking.
 - For large research tasks, use the delegate tool to spawn a focused sub-agent.
 - After exploring a directory, use save_context to record what you found (keep it short and dense — key files, exports, patterns, no prose).
 - Before exploring, check if .smol-agent/docs/ has context for that area (listed in project context).
+- Check available skills (listed in project context) and read relevant ones before starting a task.
 
 ## Error recovery
 - If replace_in_file fails, read the file to see its actual content, then retry.
@@ -245,6 +247,21 @@ export class Agent extends EventEmitter {
     return this.contextManager.getUsage(this.messages);
   }
 
+  /** Change the model on the fly. */
+  setModel(newModel) {
+    this.model = newModel;
+    // Update context manager's LLM client for summarization
+    this.contextManager.setLLMClient(this.client.host, this.model);
+    // Update sub-agent config
+    setSubAgentConfig({
+      client: this.client,
+      host: this.client.host,
+      model: this.model,
+      maxTokens: this.maxTokens,
+      cwd: this.jailDirectory,
+    });
+  }
+
   /**
    * Build the system message with project context.
    * Called once before the first run(), or after reset().
@@ -258,7 +275,7 @@ export class Agent extends EventEmitter {
     } catch { /* proceed without context */ }
 
     // Build compact tool schema block so the model knows the available API
-    const allTools = registry.ollamaTools(false);
+    const allTools = registry.ollamaTools(this.coreToolsOnly);
     const toolLines = allTools.map(t => {
       const fn = t.function;
       const params = fn.parameters?.properties || {};
@@ -345,9 +362,13 @@ export class Agent extends EventEmitter {
 
     this.running = true;
     this.abortController = new AbortController();
+    this._toolFailures = new Map();
     this._modifiedFiles = new Set();
     this._verifiedFiles = new Set();
     this.messages.push({ role: "user", content: userMessage });
+
+    // Progressive compression of old messages (cheap, always runs)
+    this.contextManager.compressOldMessages(this.messages);
 
     // Update sub-agent with current run's signal and progress callback
     setSubAgentConfig({
@@ -357,60 +378,129 @@ export class Agent extends EventEmitter {
 
     const tools = registry.ollamaTools(this.coreToolsOnly);
     let iterations = 0;
-    let streamTimedOut = false;
+    let consecutiveAgentRetries = 0;
+    let overflowRetries = 0;
+    const MAX_AGENT_RETRIES = 2;
+    const MAX_STREAM_RETRIES = 2;
+    const MAX_OVERFLOW_RETRIES = 1;
 
-    try {
-      while (iterations++ < 200) {
+    // Retry callback — emits events for UI feedback
+    const onRetry = ({ attempt, maxRetries, error, delayMs }) => {
+      const msg = formatUserError(error, this.model);
+      logger.warn(`Retry ${attempt}/${maxRetries}: ${msg} (waiting ${Math.round(delayMs)}ms)`);
+      this.emit("retry", { attempt, maxRetries, message: msg, delayMs });
+    };
+
+    while (iterations++ < 200) {
+      try {
         // Emit current usage for UI
         this.emit("token_usage", this.getTokenInfo());
 
-        // ── Stream the response ──
-        let fullContent = "";
-        let toolCalls = [];
-
-        this.emit("stream_start");
-
-        // Stream timeout — abort if no token arrives within 60 seconds
-        streamTimedOut = false;
-        let streamTimer = setTimeout(() => {
-          streamTimedOut = true;
-          if (this.abortController) {
-            this.abortController.abort();
-          }
-        }, 60_000);
-        const resetStreamTimer = () => {
-          clearTimeout(streamTimer);
-          if (!streamTimedOut) {
-            streamTimer = setTimeout(() => {
-              streamTimedOut = true;
-              if (this.abortController) {
-                this.abortController.abort();
-              }
-            }, 60_000);
-          }
-        };
-
-        for await (const event of ollama.chatStream(
-          this.client, this.model, this.messages, tools,
-          this.abortController.signal, this.maxTokens,
-        )) {
-          resetStreamTimer();
-          if (event.type === "token") {
-            fullContent += event.content;
-            this.emit("token", { content: event.content });
-          } else if (event.type === "done") {
-            toolCalls = event.toolCalls || [];
-            if (event.tokenUsage) {
-              this.contextManager.updateFromAPI(
-                event.tokenUsage.promptTokens,
-                event.tokenUsage.completionTokens
-              );
-            }
+        // ── Mid-loop context management (every 5 iterations, skip first) ──
+        if (iterations > 1 && iterations % 5 === 0) {
+          this.contextManager.compressOldMessages(this.messages);
+          const midStatus = this.contextManager.getStatus(this.messages);
+          if (midStatus.shouldPrune) {
+            logger.info(`Mid-loop prune at iteration ${iterations} (${midStatus.usage.percentage}%)`);
+            const pruneResult = this.contextManager.pruneMessages(this.messages);
+            this.messages = pruneResult.messages;
+            this.emit("token_usage", this.getTokenInfo());
           }
         }
 
-        clearTimeout(streamTimer);
-        this.emit("stream_end");
+        // ── Stream the response (with mid-stream retry) ──
+        let fullContent = "";
+        let toolCalls = [];
+        let streamSuccess = false;
+
+        for (let streamAttempt = 0; streamAttempt <= MAX_STREAM_RETRIES; streamAttempt++) {
+          fullContent = "";
+          toolCalls = [];
+          let streamTimedOut = false;
+
+          this.emit("stream_start");
+
+          // Stream timeout — abort if no token arrives within 60 seconds
+          let streamTimer = setTimeout(() => {
+            streamTimedOut = true;
+            if (this.abortController) {
+              this.abortController.abort();
+            }
+          }, 60_000);
+          const resetStreamTimer = () => {
+            clearTimeout(streamTimer);
+            if (!streamTimedOut) {
+              streamTimer = setTimeout(() => {
+                streamTimedOut = true;
+                if (this.abortController) {
+                  this.abortController.abort();
+                }
+              }, 60_000);
+            }
+          };
+
+          try {
+            for await (const event of ollama.chatStream(
+              this.client, this.model, this.messages, tools,
+              this.abortController.signal, this.maxTokens, onRetry,
+            )) {
+              resetStreamTimer();
+              if (event.type === "token") {
+                fullContent += event.content;
+                this.emit("token", { content: event.content });
+              } else if (event.type === "done") {
+                toolCalls = event.toolCalls || [];
+                if (event.tokenUsage) {
+                  this.contextManager.updateFromAPI(
+                    event.tokenUsage.promptTokens,
+                    event.tokenUsage.completionTokens,
+                    this.messages.length,
+                  );
+                }
+              }
+            }
+
+            clearTimeout(streamTimer);
+            this.emit("stream_end");
+            streamSuccess = true;
+            break; // stream completed successfully
+          } catch (streamErr) {
+            clearTimeout(streamTimer);
+            this.emit("stream_end");
+
+            // User cancellation propagates immediately
+            if (streamErr.name === "AbortError" || streamErr.message === "Operation cancelled") {
+              if (streamTimedOut && streamAttempt < MAX_STREAM_RETRIES) {
+                // Stream timeout — retry with fresh AbortController
+                logger.warn(`Stream timed out, retrying (attempt ${streamAttempt + 1}/${MAX_STREAM_RETRIES})`);
+                this.abortController = new AbortController();
+                this.emit("retry", { attempt: streamAttempt + 1, maxRetries: MAX_STREAM_RETRIES, message: "Stream timed out, retrying...", delayMs: 0 });
+                continue;
+              }
+              throw streamErr; // real cancellation
+            }
+
+            // Only retry transient errors
+            if (streamAttempt < MAX_STREAM_RETRIES && classifyError(streamErr) === 'transient') {
+              const msg = formatUserError(streamErr, this.model);
+              logger.warn(`Mid-stream error, retrying (attempt ${streamAttempt + 1}/${MAX_STREAM_RETRIES}): ${msg}`);
+              this.abortController = new AbortController();
+              this.emit("retry", { attempt: streamAttempt + 1, maxRetries: MAX_STREAM_RETRIES, message: msg, delayMs: 1000 });
+              await new Promise(r => setTimeout(r, 1000));
+              continue;
+            }
+
+            throw streamErr; // non-retryable or exhausted retries
+          }
+        }
+
+        if (!streamSuccess) {
+          // Should not reach here, but safety net
+          throw new Error("Stream failed after all retry attempts");
+        }
+
+        // Reset consecutive agent retries on successful stream
+        consecutiveAgentRetries = 0;
 
         // ── Parse thinking tags ──
         const { thinking, cleaned: cleanedContent } = parseThinkingContent(fullContent);
@@ -503,8 +593,9 @@ export class Agent extends EventEmitter {
             this._toolFailures.set(name, 0);
           }
 
-          // Truncate large tool results to prevent context bloat
-          result = this.contextManager.truncateToolResult(result);
+          // Truncate large tool results to prevent context bloat (adaptive ceiling)
+          const usageRatio = this.contextManager.getUsage(this.messages).percentage / 100;
+          result = this.contextManager.truncateToolResult(result, usageRatio);
 
           this.emit("tool_result", { name, result });
           return result;
@@ -571,48 +662,68 @@ export class Agent extends EventEmitter {
             content: `[Auto-hint] ${suggestions.join(" ")}`,
           });
         }
-      }
+      } catch (err) {
+        // ── Agent-level retry for transient errors ──
+        if (classifyError(err) === 'transient' && consecutiveAgentRetries < MAX_AGENT_RETRIES) {
+          consecutiveAgentRetries++;
+          const msg = formatUserError(err, this.model);
+          logger.warn(`Agent-level retry ${consecutiveAgentRetries}/${MAX_AGENT_RETRIES}: ${msg}`);
+          this.abortController = new AbortController();
+          this.emit("retry", { attempt: consecutiveAgentRetries, maxRetries: MAX_AGENT_RETRIES, message: msg, delayMs: 2000 });
+          await new Promise(r => setTimeout(r, 2000));
+          continue; // retry the while loop iteration
+        }
 
-      // Iteration limit
-      this.running = false;
-      this.abortController = null;
-      const msg = "(Agent reached maximum iteration limit)";
-      this.emit("response", { content: msg });
-      return msg;
-    } catch (err) {
-      this.running = false;
-      this.abortController = null;
+        if (err.name === "AbortError" || err.message === "Operation cancelled") {
+          this.running = false;
+          this.abortController = null;
+          this.emit("response", { content: "(Operation cancelled)" });
+          return "(Operation cancelled)";
+        }
 
-      if (err.name === "AbortError" || err.message === "Operation cancelled") {
-        if (streamTimedOut) {
-          const msg = "(Stream timed out — no response from model for 60 seconds)";
-          this.emit("response", { content: msg });
+        // Handle context overflow errors — compress + prune, then retry once
+        if (ContextManager.isContextOverflowError(err)) {
+          const beforeUsage = this.contextManager.getUsage(this.messages);
+          logger.error(`Context overflow: ${beforeUsage.used}/${beforeUsage.max} tokens (${beforeUsage.percentage}%)`);
+
+          // Compress old messages first, then aggressively prune
+          this.contextManager.compressOldMessages(this.messages);
+          const result = this.contextManager.pruneMessages(this.messages, { aggressive: true });
+          this.messages = result.messages;
+
+          const afterUsage = this.contextManager.getUsage(this.messages);
+          logger.info(`After overflow pruning: ${afterUsage.used}/${afterUsage.max} tokens (${afterUsage.percentage}%)`);
+          this.emit("token_usage", afterUsage);
+
+          if (overflowRetries < MAX_OVERFLOW_RETRIES) {
+            overflowRetries++;
+            logger.info(`Overflow retry ${overflowRetries}/${MAX_OVERFLOW_RETRIES} — continuing`);
+            continue; // retry the while loop after pruning
+          }
+
+          // Exhausted overflow retries — give up
+          this.running = false;
+          this.abortController = null;
+          const msg = `(Context limit exceeded at ${beforeUsage.percentage}% — pruned ${result.pruned} messages, now at ${afterUsage.percentage}%. Please retry.)`;
+          this.emit("error", new Error(msg));
           return msg;
         }
-        this.emit("response", { content: "(Operation cancelled)" });
-        return "(Operation cancelled)";
+
+        // Non-recoverable error
+        this.running = false;
+        this.abortController = null;
+        const userMsg = formatUserError(err, this.model);
+        this.emit("error", new Error(userMsg));
+        throw err;
       }
-
-      // Handle context overflow errors
-      if (ContextManager.isContextOverflowError(err)) {
-        const beforeUsage = this.contextManager.getUsage(this.messages);
-        logger.error(`Context overflow: ${beforeUsage.used}/${beforeUsage.max} tokens (${beforeUsage.percentage}%)`);
-
-        const result = this.contextManager.pruneMessages(this.messages, { aggressive: true });
-        this.messages = result.messages;
-
-        const afterUsage = this.contextManager.getUsage(this.messages);
-        logger.info(`After pruning: ${afterUsage.used}/${afterUsage.max} tokens (${afterUsage.percentage}%)`);
-        this.emit("token_usage", afterUsage);
-
-        const msg = `(Context limit exceeded at ${beforeUsage.percentage}% — pruned ${result.pruned} messages, now at ${afterUsage.percentage}%. Please retry.)`;
-        this.emit("error", new Error(msg));
-        return msg;
-      }
-
-      this.emit("error", err);
-      throw err;
     }
+
+    // Iteration limit
+    this.running = false;
+    this.abortController = null;
+    const msg = "(Agent reached maximum iteration limit)";
+    this.emit("response", { content: msg });
+    return msg;
   }
 
   /** Cancel the current operation. */

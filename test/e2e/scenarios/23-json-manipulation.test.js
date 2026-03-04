@@ -21,7 +21,7 @@ export async function run() {
   await seedFile(tmpDir, "package.json", JSON.stringify(SEED_PACKAGE, null, 2));
 
   try {
-    const response = await runWithTimeout(
+    const _response = await runWithTimeout(
       agent,
       "Add lodash@4.17.21 as a dependency and add a 'test' script that runs 'jest'",
       meta.timeout,

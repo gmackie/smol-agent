@@ -1,6 +1,6 @@
 import {
   createTestAgent, runWithTimeout, collectEvents,
-  scoreResult, check, seedFile, readResult, fileExists, cleanup,
+  scoreResult, check, seedFile, cleanup,
 } from "../harness.js";
 import { config } from "../config.js";
 

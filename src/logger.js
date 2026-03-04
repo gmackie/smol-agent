@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { classifyError } from './errors.js';
 
 // Log levels in order of severity
-const LEVELS = {
+export const LEVELS = {
   debug: 0,
   info: 1,
   warn: 2,
@@ -11,7 +12,6 @@ const LEVELS = {
 
 // Get log level from environment or default to info
 const LOG_LEVEL = process.env.SMOL_AGENT_LOG_LEVEL || 'info';
-const MIN_LEVEL = LEVELS[LOG_LEVEL] || LEVELS.info;
 
 // Ensure state directory exists
 const stateDir = path.join(process.cwd(), '.smol-agent', 'state');
@@ -120,33 +120,11 @@ export function formatError(err) {
 }
 
 /**
- * Check if an error is transient (recoverable with retry)
+ * Check if an error is transient (recoverable with retry).
+ * @deprecated Use classifyError() from errors.js instead.
  */
 export function isTransientError(err) {
-  if (!err) return false;
-  
-  // Network errors are typically transient
-  if (err.code === 'ECONNREFUSED' ||
-      err.code === 'ETIMEDOUT' ||
-      err.code === 'ECONNRESET' ||
-      err.code === 'ENOTFOUND' ||
-      err.code === 'EAI_AGAIN') {
-    return true;
-  }
-  
-  // Ollama-specific errors that might be transient
-  if (err.message?.includes('timeout') ||
-      err.message?.includes('deadline')) {
-    return true;
-  }
-  
-  // HTTP 429 (rate limit) and 5xx errors are transient
-  if (err.status === 429 ||
-      (err.status >= 500 && err.status < 600)) {
-    return true;
-  }
-  
-  return false;
+  return classifyError(err) === 'transient';
 }
 
 export default {

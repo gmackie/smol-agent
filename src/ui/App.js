@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { MultilineInput, useMultilineInput } from "./MultilineInput.js";
 import Spinner from "ink-spinner";
@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { setAskHandler } from "../tools/ask_user.js";
 import { saveSetting } from "../settings.js";
 import { Markdown, processInlineFormatting } from "./markdown.js";
+import * as ollama from "../ollama.js";
 
 const isRawModeSupported =
   process.stdin.isTTY && typeof process.stdin.setRawMode === "function";
@@ -108,6 +109,39 @@ const LOADING_MESSAGES = [
   "Preparing tools...",
   "Almost ready...",
 ];
+
+// ═══ Context Usage Bar Component ═══
+function ContextUsageBar({ usage }) {
+  const { percentage, used, max } = usage;
+  const barWidth = 10;
+  const filled = Math.round((percentage / 100) * barWidth);
+  const empty = barWidth - filled;
+  
+  // Color coding based on usage level
+  let color;
+  if (percentage > 90) color = "red";
+  else if (percentage > 75) color = "yellow";
+  else if (percentage > 50) color = "cyan";
+  else color = "green";
+  
+  // Format token counts (e.g., "45K" instead of "45000")
+  const formatTokens = (n) => {
+    if (n >= 1000) return `${Math.round(n / 1000)}K`;
+    return String(n);
+  };
+  
+  // Build the progress bar
+  const bar = "█".repeat(filled) + "░".repeat(empty);
+  
+  return e(Box, null,
+    e(Text, { dimColor: true }, "["),
+    e(Text, { color, bold: percentage > 90 }, bar),
+    e(Text, { dimColor: true }, "] "),
+    e(Text, { color, dimColor: percentage <= 75, bold: percentage > 90 }, `${percentage}%`),
+    e(Text, { dimColor: true }, " "),
+    e(Text, { dimColor: true }, `${formatTokens(used)}/${formatTokens(max)}`),
+  );
+}
 
 // ═══ Main App ═══
 
@@ -239,6 +273,11 @@ export default function App({ agent, initialPrompt }) {
       setLog(addToLog({ role: "error", text: error.message }));
     };
 
+    const onRetry = ({ attempt, maxRetries, message }) => {
+      setLog(addToLog({ role: "tool", text: `(retry ${attempt}/${maxRetries}: ${message})` }));
+      setStatusText(`retrying (${attempt}/${maxRetries})...`);
+    };
+
     const onSubAgentProgress = (event) => {
       if (event.type === "start") {
         setStatusText(`delegate: ${event.task?.substring(0, 60) || "researching"}...`);
@@ -260,6 +299,7 @@ export default function App({ agent, initialPrompt }) {
     agent.on("token_usage", onTokenUsage);
     agent.on("context_ready", onContextReady);
     agent.on("error", onError);
+    agent.on("retry", onRetry);
     agent.on("sub_agent_progress", onSubAgentProgress);
 
     return () => {
@@ -272,6 +312,7 @@ export default function App({ agent, initialPrompt }) {
       agent.off("token_usage", onTokenUsage);
       agent.off("context_ready", onContextReady);
       agent.off("error", onError);
+      agent.off("retry", onRetry);
       agent.off("sub_agent_progress", onSubAgentProgress);
       // Clean up any pending stream throttle timeout
       if (streamThrottleRef.current) {
@@ -321,7 +362,8 @@ export default function App({ agent, initialPrompt }) {
     async (text) => {
       if (!text.trim()) return;
 
-      if (text.trim() === "exit" || text.trim() === "quit") { exit(); return; }
+      const trimmed = text.trim();
+      if (trimmed === "exit" || trimmed === "quit" || trimmed === "/exit" || trimmed === "/quit") { exit(); return; }
 
       if (text.trim() === "/reset") {
         agent.reset();
@@ -336,6 +378,35 @@ export default function App({ agent, initialPrompt }) {
           setLog(addToLog({ role: "tool", text: `(context saved to ${contextPath})` }));
         } catch (err) {
           setLog(addToLog({ role: "error", text: `Failed to save context: ${err.message}` }));
+        }
+        return;
+      }
+
+      // /model [<name>] - change or show current model
+      if (text.trim().startsWith("/model")) {
+        const parts = text.trim().split(/\s+/);
+        if (parts.length === 1) {
+          // Just "/model" - show current model
+          setLog(addToLog({ role: "tool", text: `Current model: ${agent.model}` }));
+        } else if (parts[1] === "?" || parts[1] === "list") {
+          // List available models
+          try {
+            const models = await ollama.listModels(agent.client);
+            if (models.length === 0) {
+              setLog(addToLog({ role: "tool", text: "No models found. Pull a model with: ollama pull <model>" }));
+            } else {
+              const sortedModels = models.map(m => m.name).sort((a, b) => a.localeCompare(b));
+              const modelList = sortedModels.join("\n");
+              setLog(addToLog({ role: "tool", text: `Available models:\n${modelList}` }));
+            }
+          } catch (err) {
+            setLog(addToLog({ role: "error", text: `Failed to list models: ${err.message}` }));
+          }
+        } else {
+          // Switch to new model
+          const newModel = parts[1];
+          agent.setModel(newModel);
+          setLog(addToLog({ role: "tool", text: `Switched to model: ${newModel}` }));
         }
         return;
       }
@@ -496,11 +567,6 @@ export default function App({ agent, initialPrompt }) {
       e(Text, { dimColor: true }, "│  "),
       e(Text, { color: "magenta" }, agent.model),
       e(Box, { flexGrow: 1 }),
-      tokenUsage && e(Text, {
-        color: tokenUsage.percentage > 90 ? "red" : tokenUsage.percentage > 75 ? "yellow" : undefined,
-        dimColor: tokenUsage.percentage <= 75,
-        bold: tokenUsage.percentage > 90,
-      }, `${tokenUsage.percentage}%`),
       e(Text, { dimColor: true }, "  │"),
     ),
     e(Text, { dimColor: true }, headerBot),
@@ -585,33 +651,15 @@ export default function App({ agent, initialPrompt }) {
         e(Text, { dimColor: true }, ` ${statusText}`),
       ),
 
-    // ── Ask user ──
+    // ── Ask user (shown above input when active) ──
     askState &&
-      e(Box, { marginTop: 1 },
+      e(Box, { marginTop: 0 },
         e(Text, { bold: true, color: "magenta" }, " ?  "),
         e(Text, { bold: true }, askState.question),
       ),
 
-    // ── Tool approval prompt ──
-    approvalState &&
-      e(Box, { marginTop: 1, flexDirection: "column" },
-        e(Box, null,
-          e(Text, { color: "yellow", bold: true }, " \u26A0  Approve? "),
-          e(Text, { bold: true }, approvalState.name),
-          e(Text, { dimColor: true }, `(${summarizeArgs(approvalState.args)})`),
-        ),
-        e(Box, { marginLeft: 4 },
-          e(Text, { color: "green" }, "[y]"),
-          e(Text, { dimColor: true }, " approve  "),
-          e(Text, { color: "red" }, "[n]"),
-          e(Text, { dimColor: true }, " reject  "),
-          e(Text, { color: "cyan" }, "[a]"),
-          e(Text, { dimColor: true }, " approve all"),
-        ),
-      ),
-
-    // ── Input ──
-    e(Box, { marginTop: 1 },
+    // ── Input (ask_user shows here if question pending) ──
+    e(Box, { marginTop: 0 },
       e(MultilineInput, {
         value: input,
         cursorOffset: cursorOffset,
@@ -621,23 +669,18 @@ export default function App({ agent, initialPrompt }) {
       }),
     ),
 
-    // ── Status line ──
+    // ── Status line (compact) ──
+    e(Box, { marginTop: 0, flexDirection: "row", alignItems: "center" },
+      e(Text, { dimColor: true }, "  "),
+      statusText && e(Text, { dimColor: true }, statusText),
+    ),
+
+    // ── Context bar (always visible at bottom) ──
     e(Box, { marginTop: 0 },
       e(Text, { dimColor: true }, "  "),
-      e(Text, { color: "green", bold: true }, "coding"),
-      (() => {
-        const toolCalls = log.filter((x) => x.role === "tool" && x.text?.startsWith("[tool]")).length;
-        const turns = log.filter((x) => x.role === "user").length;
-        const parts = [];
-        if (turns > 0) parts.push(`${turns} turn${turns !== 1 ? "s" : ""}`);
-        if (toolCalls > 0) parts.push(`${toolCalls} tool call${toolCalls !== 1 ? "s" : ""}`);
-        if (tokenUsage) parts.push(`${tokenUsage.percentage}% ctx`);
-        return parts.length > 0
-          ? e(Text, { dimColor: true }, " · " + parts.join(" · "))
-          : null;
-      })(),
+      tokenUsage && e(ContextUsageBar, { usage: tokenUsage }),
       e(Box, { flexGrow: 1 }),
-      e(Text, { dimColor: true }, "ctrl+j newline · /reset · exit "),
+      e(Text, { dimColor: true }, "ctrl+j newline · /model · /reset · /exit "),
     ),
   );
 }
