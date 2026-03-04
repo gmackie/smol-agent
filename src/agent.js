@@ -19,6 +19,7 @@ import "./tools/plan_tools.js";
 import "./tools/reflection.js";
 import "./tools/memory.js";
 import { setSubAgentConfig } from "./tools/sub_agent.js";
+import "./tools/context_docs.js";
 
 // ── Thinking tags parser ─────────────────────────────────────────────
 
@@ -130,11 +131,14 @@ Then immediately call a tool — do NOT narrate after thinking.
 - If a tool fails, try an alternative approach (e.g., read the file first, then retry with correct content).
 - Use the remember tool to save important project facts for future sessions.
 - For large research tasks, use the delegate tool to spawn a focused sub-agent.
+- After exploring a directory, use save_context to record what you found (keep it short and dense — key files, exports, patterns, no prose).
+- Before exploring, check if .smol-agent/docs/ has context for that area (listed in project context).
 
 ## Error recovery
 - If replace_in_file fails, read the file to see its actual content, then retry.
 - If a command fails, analyze the error output before retrying blindly.
 - If you're stuck after 2 failed attempts, step back and try a different approach.
+- To test HTTP servers, start the server in the background and use curl to hit endpoints (e.g. \`node server.js & sleep 1 && curl http://localhost:PORT/endpoint\`).
 
 ## Example tool call
 When the user asks "Add a hello() function to utils.js", respond with a tool call like:

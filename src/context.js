@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { execSync } from "node:child_process";
 import { loadMemories } from "./tools/memory.js";
+import { loadContextDocs } from "./tools/context_docs.js";
 
 const IGNORED = new Set([
   "node_modules", ".git", "__pycache__", ".next", "dist", "build",
@@ -50,6 +51,12 @@ export async function gatherContext(cwd, contextSize = 100) {
       sections.push(`## Memories from previous sessions\n${memLines.join("\n")}${suffix}`);
     }
   } catch { /* no memories */ }
+
+  // 7. Codebase context docs from previous sessions
+  const docs = await loadContextDocs(cwd);
+  if (docs.length > 0) {
+    sections.push(`## Codebase context docs\nAvailable: ${docs.join(", ")}\nCheck .smol-agent/docs/<name>.md before exploring a directory.`);
+  }
 
   return sections.join("\n\n");
 }

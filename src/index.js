@@ -17,6 +17,7 @@ let promptText = undefined;
 let jailDirectory = process.cwd();
 let allTools = undefined; // undefined = auto-detect from model size
 let autoApprove = false;
+let acpMode = false;
 
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
@@ -36,6 +37,8 @@ for (let i = 0; i < args.length; i++) {
     allTools = true;
   } else if (a === "--auto-approve" || a === "--yolo") {
     autoApprove = true;
+  } else if (a === "--acp") {
+    acpMode = true;
   } else if (a === "--help") {
     printUsage();
     process.exit(0);
@@ -58,6 +61,7 @@ Options:
   -d, --directory <path>    Set working directory and jail boundary (default: cwd)
       --all-tools           Expose all tools (auto-detected for 30B+ models)
       --auto-approve        Skip approval prompts for write/command tools (alias: --yolo)
+      --acp                 Run as ACP (Agent Client Protocol) server over stdio
       --help                Show this help message
 
 Interactive Commands:
@@ -91,33 +95,47 @@ function shouldUseCoreOnly(modelName) {
 }
 
 const coreToolsOnly = shouldUseCoreOnly(model);
-const agent = new Agent({ host, model, contextSize, jailDirectory, coreToolsOnly });
 
-// Load persisted settings, CLI flags override
-const settings = await loadSettings(jailDirectory);
-if (autoApprove || settings.autoApprove) {
-  agent._approveAll = true;
-}
-
-const isRawModeSupported = process.stdin.isTTY && typeof process.stdin.setRawMode === "function";
-
-let renderOptions = {};
-if (!isRawModeSupported) {
-  const mockStdin = {
-    isTTY: true,
-    setRawMode: () => {},
-    setEncoding: () => {},
-    ref: () => {},
-    unref: () => {},
-    on: (event, cb) => { if (event === "data") process.stdin.on(event, cb); },
-    removeListener: (event, cb) => { if (event === "data") process.stdin.removeListener(event, cb); },
-    resume: () => {},
-    pause: () => {},
-    addListener: () => {},
-  };
-  renderOptions = { stdin: mockStdin, exitOnCtrlC: false };
+// ── ACP mode ──────────────────────────────────────────────────────────
+if (acpMode) {
+  const { startACPServer } = await import("./acp-server.js");
+  startACPServer({
+    host,
+    model,
+    contextSize,
+    coreToolsOnly,
+    autoApprove,
+  });
 } else {
-  renderOptions = { exitOnCtrlC: false };
-}
+  // ── TUI mode ────────────────────────────────────────────────────────
+  const agent = new Agent({ host, model, contextSize, jailDirectory, coreToolsOnly });
 
-render(React.createElement(App, { agent, initialPrompt: promptText }), renderOptions);
+  // Load persisted settings, CLI flags override
+  const settings = await loadSettings(jailDirectory);
+  if (autoApprove || settings.autoApprove) {
+    agent._approveAll = true;
+  }
+
+  const isRawModeSupported = process.stdin.isTTY && typeof process.stdin.setRawMode === "function";
+
+  let renderOptions = {};
+  if (!isRawModeSupported) {
+    const mockStdin = {
+      isTTY: true,
+      setRawMode: () => {},
+      setEncoding: () => {},
+      ref: () => {},
+      unref: () => {},
+      on: (event, cb) => { if (event === "data") process.stdin.on(event, cb); },
+      removeListener: (event, cb) => { if (event === "data") process.stdin.removeListener(event, cb); },
+      resume: () => {},
+      pause: () => {},
+      addListener: () => {},
+    };
+    renderOptions = { stdin: mockStdin, exitOnCtrlC: false };
+  } else {
+    renderOptions = { exitOnCtrlC: false };
+  }
+
+  render(React.createElement(App, { agent, initialPrompt: promptText }), renderOptions);
+}

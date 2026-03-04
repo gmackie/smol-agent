@@ -6,6 +6,7 @@
 
 export const config = {
   model: process.env.SMOL_TEST_MODEL || "glm-5:cloud",
+  judgeModel: process.env.SMOL_JUDGE_MODEL || undefined,
   host: process.env.OLLAMA_HOST || "http://127.0.0.1:11434",
 
   // Per-scenario timeout tiers (ms) — can be overridden via env vars

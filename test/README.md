@@ -133,12 +133,19 @@ node test/e2e/runner.js --json > results.json
 
 The `.github/workflows/model-benchmark.yml` workflow tests the agent against **Ollama cloud models** - fast, reliable, and optimized for coding:
 
+### Coding-Specialized Models
 | Model | Size | Strengths |
 |-------|------|-----------|
 | **qwen3-coder-next** | ~80B | Optimized for agentic coding workflows, local dev |
 | **devstral-small-2:24b** | 24B | Excels at tools, multi-file edits, codebase exploration |
 | **rnj-1:8b** | 8B | Optimized for code and STEM, SOTA performance |
 | **ministral-3:8b** | 8B | Edge deployment, vision and tool support |
+
+### SOTA General Models (for comparison)
+| Model | Size | Strengths |
+|-------|------|-----------|
+| **minimax-m2.5** | ~230B | State-of-the-art for real-world productivity & coding |
+| **glm-5** | ~744B | Strong reasoning, agentic capabilities, massive context |
 
 **Benefits of Cloud Models**:
 - ⚡ Much faster than local models (datacenter GPUs)

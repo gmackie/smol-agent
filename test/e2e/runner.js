@@ -23,7 +23,12 @@ const NO_RETRY = args.includes("--no-retry");
 const VERBOSE = args.includes("--verbose");
 const FILTER = (() => {
   const idx = args.indexOf("--filter");
-  return idx !== -1 && args[idx + 1] ? args[idx + 1] : null;
+  if (idx !== -1 && args[idx + 1]) return args[idx + 1];
+  // Support env var for npm run: npm run test:e2e --filter=33
+  // npm exposes --flag=value as npm_config_filter
+  if (process.env.npm_config_filter) return process.env.npm_config_filter;
+  if (process.env.SMOL_TEST_FILTER) return process.env.SMOL_TEST_FILTER;
+  return null;
 })();
 
 // In JSON mode, human output goes to stderr so stdout is clean JSON.

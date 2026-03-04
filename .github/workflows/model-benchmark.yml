@@ -18,10 +18,12 @@ jobs:
         # Ollama cloud models - accessed via https://ollama.com API
         # Full list: curl https://ollama.com/api/tags
         model:
-          - qwen3-coder-next          # Optimized for agentic coding workflows
+          - qwen3-coder-next          # ~80B, optimized for agentic coding workflows
           - devstral-small-2:24b      # 24B, excels at tools & multi-file edits
           - rnj-1:8b                  # 8B, optimized for code and STEM
           - ministral-3:8b            # 8B, edge deployment with tool support
+          - minimax-m2.5              # ~230B, SOTA for productivity & coding
+          - glm-5                     # ~744B, strong reasoning & agentic model
 
     steps:
       - name: Sanitize model name for artifacts
@@ -39,6 +41,16 @@ jobs:
         with:
           node-version: '18'
           cache: 'npm'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++
 
       - name: Install dependencies
         run: npm ci

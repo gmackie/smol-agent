@@ -16,6 +16,8 @@ DEFAULT_MODELS=(
   "devstral-small-2:24b"
   "rnj-1:8b"
   "ministral-3:8b"
+  "minimax-m2.5"
+  "glm-5"
 )
 
 # Parse arguments
