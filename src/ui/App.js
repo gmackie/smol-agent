@@ -457,6 +457,8 @@ export default function App({ agent, initialPrompt }) {
   busyRef.current = busy;
   const approvalRef = useRef(null);
   approvalRef.current = approvalState;
+  const askRef = useRef(null);
+  askRef.current = askState;
 
   const inputHandler = useCallback((ch, key) => {
     // Handle Ctrl+C for exit/cancel
@@ -509,16 +511,24 @@ export default function App({ agent, initialPrompt }) {
       return;
     }
 
-    // When not busy, handle text input (works in both normal and ask modes)
-    if (!busy) {
-      const handled = handleMultilineInput(ch, key);
-      if (handled) return;
+    // Handle text input (works in normal, ask, and busy/nudge modes)
+    const handled = handleMultilineInput(ch, key);
+    if (handled) return;
 
-      // Enter submits (multiline handler already consumed Shift+Enter / Ctrl+J)
-      if (key.return) {
-        handleSubmit(input);
+    // Enter submits or injects a nudge
+    if (key.return) {
+      if (busyRef.current && !askRef.current) {
+        // Agent is running — inject as a nudge
+        const text = input.trim();
+        if (text) {
+          agent.inject(text);
+          setLog(addToLog({ role: "nudge", text }));
+          setInput("");
+        }
         return;
       }
+      handleSubmit(input);
+      return;
     }
   }, [agent, exit, busy, input, handleMultilineInput, handleSubmit, addToLog]);
 
@@ -613,6 +623,14 @@ export default function App({ agent, initialPrompt }) {
           ),
         );
       }
+      if (entry.role === "nudge") {
+        return [
+          e(Box, { key, marginTop: 1 },
+            e(Text, { color: "yellow", bold: true }, " >> "),
+            e(Text, { color: "yellow" }, entry.text || ""),
+          ),
+        ];
+      }
       if (entry.role === "tool") {
         return [e(Text, { key, dimColor: true }, "    ⎿  " + (entry.text || ""))];
       }
@@ -663,7 +681,7 @@ export default function App({ agent, initialPrompt }) {
       e(MultilineInput, {
         value: input,
         cursorOffset: cursorOffset,
-        focus: !busy,
+        focus: !approvalState,
         width: boxWidth,
         pasteLineCount: pasteLineCount,
       }),
@@ -680,7 +698,7 @@ export default function App({ agent, initialPrompt }) {
       e(Text, { dimColor: true }, "  "),
       tokenUsage && e(ContextUsageBar, { usage: tokenUsage }),
       e(Box, { flexGrow: 1 }),
-      e(Text, { dimColor: true }, "ctrl+j newline · /model · /reset · /exit "),
+      e(Text, { dimColor: true }, "ctrl+j newline · type while busy to nudge · /model · /reset · /exit "),
     ),
   );
 }

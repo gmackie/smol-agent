@@ -181,6 +181,41 @@ function looksLikeUnexecutedIntent(text) {
   return (hasIntent && mentionsTool) || (hasIntent && text.length < 200);
 }
 
+// ── Loop detection ───────────────────────────────────────────────────
+
+/**
+ * Detect if the agent is stuck in a repetitive tool-call loop.
+ * Examines a sliding window of recent tool call signatures and returns
+ * a severity level:
+ *   0 = no loop detected
+ *   1 = likely loop (nudge the model)
+ *   2 = definite loop (force stop)
+ */
+export function detectToolLoop(recentSignatures, loopNudges) {
+  if (recentSignatures.length < 6) return 0;
+
+  // Count frequency of each signature in the window
+  const freq = new Map();
+  for (const sig of recentSignatures) {
+    freq.set(sig, (freq.get(sig) || 0) + 1);
+  }
+
+  const maxFreq = Math.max(...freq.values());
+  const uniqueRatio = freq.size / recentSignatures.length;
+
+  // Definite loop: same call >6 times, or very low diversity after a nudge
+  if (maxFreq > 6 || (uniqueRatio < 0.2 && loopNudges >= 1)) {
+    return 2;
+  }
+
+  // Likely loop: same call 4+ times, or very low diversity
+  if (maxFreq >= 4 || (uniqueRatio < 0.3 && recentSignatures.length >= 8)) {
+    return 1;
+  }
+
+  return 0;
+}
+
 // ── Agent ────────────────────────────────────────────────────────────
 
 export class Agent extends EventEmitter {
@@ -208,6 +243,13 @@ export class Agent extends EventEmitter {
     // Verify step — track files modified and re-read during a run
     this._modifiedFiles = new Set();
     this._verifiedFiles = new Set();
+
+    // Loop detection — sliding window of recent tool call signatures
+    this._recentToolCalls = [];
+    this._loopNudges = 0;
+
+    // User nudge injection — messages queued while the agent is running
+    this._pendingInjections = [];
 
     // Approval system — handler set by UI, _approveAll toggled by user pressing "a"
     this._approvalHandler = null;
@@ -240,6 +282,16 @@ export class Agent extends EventEmitter {
    */
   setApprovalHandler(handler) {
     this._approvalHandler = handler;
+  }
+
+  /**
+   * Inject a user message into the running conversation.
+   * The message will be picked up on the next loop iteration.
+   */
+  inject(message) {
+    if (this.running) {
+      this._pendingInjections.push(message);
+    }
   }
 
   /** Get current token usage info. */
@@ -365,6 +417,8 @@ export class Agent extends EventEmitter {
     this._toolFailures = new Map();
     this._modifiedFiles = new Set();
     this._verifiedFiles = new Set();
+    this._recentToolCalls = [];
+    this._loopNudges = 0;
     this.messages.push({ role: "user", content: userMessage });
 
     // Progressive compression of old messages (cheap, always runs)
@@ -393,6 +447,14 @@ export class Agent extends EventEmitter {
 
     while (iterations++ < 200) {
       try {
+        // ── Flush any injected user messages ──
+        while (this._pendingInjections.length > 0) {
+          const injected = this._pendingInjections.shift();
+          this.messages.push({ role: "user", content: injected });
+          this.emit("injection", { content: injected });
+          logger.info(`Injected user nudge: ${injected.slice(0, 80)}`);
+        }
+
         // Emit current usage for UI
         this.emit("token_usage", this.getTokenInfo());
 
@@ -564,6 +626,38 @@ export class Agent extends EventEmitter {
           }
           seen.add(key);
           uniqueToolCalls.push(tc);
+        }
+
+        // ── Loop detection ──
+        // Track recent tool call signatures (sliding window of last 12)
+        for (const tc of uniqueToolCalls) {
+          const sig = JSON.stringify({ n: tc.function.name, a: tc.function.arguments });
+          this._recentToolCalls.push(sig);
+        }
+        if (this._recentToolCalls.length > 12) {
+          this._recentToolCalls = this._recentToolCalls.slice(-12);
+        }
+
+        const loopSeverity = detectToolLoop(this._recentToolCalls, this._loopNudges);
+        if (loopSeverity === 2) {
+          // Definite loop — force stop
+          logger.warn(`Loop detected (severity 2) after ${iterations} iterations — aborting`);
+          this.running = false;
+          this.abortController = null;
+          this._loopNudges = 0; // Reset for next run
+          const msg = "I appear to be stuck in a loop repeating the same actions. Let me stop here — could you rephrase your request or provide more details?";
+          this.messages.push({ role: "assistant", content: msg });
+          this.emit("response", { content: msg });
+          this.emit("token_usage", this.getTokenInfo());
+          return msg;
+        }
+        if (loopSeverity === 1) {
+          this._loopNudges++;
+          logger.info(`Loop detected (severity 1, nudge ${this._loopNudges}) — injecting warning`);
+          this.messages.push({
+            role: "user",
+            content: "[Auto-hint] You are repeating the same tool calls without making progress. STOP and try a completely different approach. If you cannot accomplish the task, explain what's blocking you instead of retrying the same actions.",
+          });
         }
 
         // ── Execute tool calls ──
@@ -741,6 +835,9 @@ export class Agent extends EventEmitter {
     this._toolFailures = new Map();
     this._modifiedFiles = new Set();
     this._verifiedFiles = new Set();
+    this._recentToolCalls = [];
+    this._loopNudges = 0;
+    this._pendingInjections = [];
     this._approveAll = false;
   }
 
