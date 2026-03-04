@@ -6,15 +6,19 @@ import {
   Editor,
   Markdown,
   Spacer,
+  CombinedAutocompleteProvider,
   matchesKey,
   truncateToWidth,
+  visibleWidth,
 } from "@mariozechner/pi-tui";
 import chalk from "chalk";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { execSync } from "node:child_process";
 import { setAskHandler } from "../tools/ask_user.js";
 import { saveSetting } from "../settings.js";
 import { listModels } from "../ollama.js";
+import { readRecentLogs } from "../logger.js";
 
 // ═══ Loading animation (SMOL AGENT rain effect) ═══
 
@@ -177,8 +181,22 @@ const editorTheme = {
   },
 };
 
+// ═══ FooterBar component ═══
+
+class FooterBar {
+  constructor(getState) {
+    this.getState = getState;
+  }
+
+  invalidate() {}
+
+  render(width) {
+    const { modelName, tokenUsage, gitStats } = this.getState();
+    return [buildContextBar(modelName, tokenUsage, gitStats, width)];
+  }
+}
+
 // ═══ StatusArea component ═══
-// Renders live status: streaming text, spinner, ask prompt, approval prompt
 
 class StatusArea {
   constructor(getState, tui) {
@@ -206,15 +224,24 @@ class StatusArea {
 
     if (state.streamContent) {
       const sLines = state.streamContent.split("\n");
-      const first = sLines[0] || "";
-      const rest = sLines.length > 1 ? sLines.slice(1).join("\n") : null;
       lines.push("");
       const cursor = chalk.cyan("▌");
-      const firstLine = chalk.cyan.bold(" ⏺  ") + first + (rest ? "" : cursor);
-      lines.push(truncateToWidth(firstLine, width));
-      if (rest) {
-        const restLine = "     " + rest + cursor;
-        lines.push(truncateToWidth(restLine, width));
+      
+      // Check if the first line contains markdown formatting (e.g., **bold**, *italic*)
+      const hasMarkdown = sLines[0].match(/\*\*.*?\*/s) !== null || sLines[0].match(/\*\.?.*?\*/s) !== null || sLines[0].match(/\*\[.*?\]\*/s) !== null;
+      
+      if (hasMarkdown) {
+        // Render the first line as markdown
+        lines.push(new Markdown(sLines[0], 1, 0, markdownTheme));
+      } else {
+        // Render as plain text
+        const firstLine = chalk.cyan.bold(" ▸  ") + sLines[0] + (sLines.length === 1 ? cursor : "");
+        lines.push(truncateToWidth(firstLine, width));
+      }
+      
+      if (sLines.length > 1) {
+        const lastLine = sLines[sLines.length - 1];
+        lines.push(truncateToWidth("     " + lastLine + cursor, width));
       }
     } else if (state.busy) {
       const frame = this.loaderFrames[this.loaderFrame];
@@ -244,6 +271,67 @@ class StatusArea {
   }
 }
 
+// ═══ ChatView ═══
+// Layout component that owns output, status, editor, and footer.
+// Implements Focusable so TUI delegates input to it.
+// Output grows naturally — pi-tui's viewport tracking keeps the bottom visible.
+
+class ChatView {
+  constructor(tui, editor, statusArea, footerBar) {
+    this.tui = tui;
+    this.output = new Container();
+    this.editor = editor;
+    this.statusArea = statusArea;
+    this.footerBar = footerBar;
+    this._focused = false;
+  }
+
+  get focused() { return this._focused; }
+  set focused(v) {
+    this._focused = v;
+    this.editor.focused = v;
+  }
+
+  handleInput(data) {
+    this.editor.handleInput(data);
+  }
+
+  invalidate() {
+    this.output.invalidate?.();
+    this.editor.invalidate?.();
+    this.statusArea.invalidate?.();
+    this.footerBar.invalidate?.();
+  }
+
+  render(width) {
+    const outputLines = this.output.render(width);
+    const statusLines = this.statusArea.render(width);
+    const editorLines = this.editor.render(width);
+    const footerLines = this.footerBar.render(width);
+
+    // Place ❯ prompt on first content line of editor (after top border)
+    if (editorLines.length > 1) {
+      editorLines[1] = truncateToWidth(chalk.green.bold("❯ ") + editorLines[1].slice(1), width);
+    }
+
+    return [...outputLines, ...statusLines, ...editorLines, ...footerLines];
+  }
+
+  addLog(text) {
+    this.output.addChild(new Text(text, 0, 0));
+    this.tui.requestRender();
+  }
+
+  addLogMarkdown(prefixLine, rest) {
+    this.output.addChild(new Spacer(1));
+    this.output.addChild(new Text(prefixLine, 0, 0));
+    if (rest && rest.trim()) {
+      this.output.addChild(new Markdown(rest, 1, 0, markdownTheme));
+    }
+    this.tui.requestRender();
+  }
+}
+
 // ═══ Helpers ═══
 
 function summarizeArgs(args) {
@@ -256,9 +344,48 @@ function summarizeArgs(args) {
   return parts.join(", ");
 }
 
-function buildContextBar(tokenUsage) {
-  const hint = chalk.dim("ctrl+j newline · type while busy to nudge · /model · /reset · /exit ");
-  if (!tokenUsage) return hint;
+/**
+ * Get git diff stats (lines added/removed) for the working directory.
+ * Returns { branch, added, removed } or null if not in a git repo.
+ */
+function getGitStats(cwd) {
+  try {
+    const branch = execSync("git rev-parse --abbrev-ref HEAD", {
+      cwd, encoding: "utf-8", timeout: 5000,
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
+
+    // Get diff stats --numstat shows added\tremoved\tfilename
+    const diffStats = execSync("git diff --numstat", {
+      cwd, encoding: "utf-8", timeout: 5000,
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
+
+    let added = 0;
+    let removed = 0;
+    if (diffStats) {
+      for (const line of diffStats.split("\n")) {
+        const [add, rem] = line.split("\t");
+        // Binary files show "-" for add/rem
+        if (add !== "-" && rem !== "-") {
+          added += parseInt(add, 10) || 0;
+          removed += parseInt(rem, 10) || 0;
+        }
+      }
+    }
+
+    return { branch, added, removed };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build the left part of the context bar (model + token usage).
+ */
+function buildContextBarLeft(modelName, tokenUsage) {
+  const modelPart = chalk.magenta(modelName || "");
+  if (!tokenUsage) return " " + modelPart + chalk.dim(" |");
   const { percentage, used, max } = tokenUsage;
   const barWidth = 10;
   const filled = Math.round((percentage / 100) * barWidth);
@@ -269,7 +396,39 @@ function buildContextBar(tokenUsage) {
   else if (percentage > 50) colorFn = chalk.cyan;
   else colorFn = chalk.green;
   const formatTokens = (n) => (n >= 1000 ? `${Math.round(n / 1000)}K` : String(n));
-  return colorFn(`[${bar}] ${percentage}%`) + chalk.dim(` ${formatTokens(used)}/${formatTokens(max)}  `) + hint;
+  return " " + modelPart + chalk.dim(" | ") + colorFn(`[${bar}] ${percentage}%`) + chalk.dim(` ${formatTokens(used)}/${formatTokens(max)} |`);
+}
+
+/**
+ * Build the right part of the context bar (git stats).
+ */
+function buildContextBarRight(gitStats) {
+  if (!gitStats) return "";
+  const branchPart = chalk.cyan(gitStats.branch);
+  if (gitStats.added > 0 || gitStats.removed > 0) {
+    const addPart = chalk.green(`+${gitStats.added}`);
+    const remPart = chalk.red(`-${gitStats.removed}`);
+    return chalk.dim("[") + branchPart + chalk.dim("] ") + addPart + " " + remPart + " ";
+  }
+  return chalk.dim("[") + branchPart + chalk.dim("] ");
+}
+
+/**
+ * Build the full context bar with right-justified git stats.
+ */
+function buildContextBar(modelName, tokenUsage, gitStats, width) {
+  const leftPart = buildContextBarLeft(modelName, tokenUsage);
+  const rightPart = buildContextBarRight(gitStats);
+
+  if (!rightPart) return leftPart;
+
+  // Calculate padding needed to right-justify git stats
+  // Use visibleWidth to handle ANSI escape codes correctly
+  const leftLength = visibleWidth(leftPart);
+  const rightLength = visibleWidth(rightPart);
+  const padding = Math.max(1, width - leftLength - rightLength);
+
+  return leftPart + " ".repeat(padding) + rightPart;
 }
 
 // ═══ Main entry point ═══
@@ -290,14 +449,13 @@ export function startApp(agent, initialPrompt) {
   let contextReady = false;
   let minTimeElapsed = false;
   let isLoading = true;
+  let gitStats = null;
 
   // ── Loading screen ──
   const loadingAnim = new LoadingAnimation(tui, agent.model);
   tui.addChild(loadingAnim);
 
   // ── Main UI components ──
-  const logContainer = new Container();
-
   const statusArea = new StatusArea(() => ({
     busy,
     streamContent,
@@ -306,29 +464,42 @@ export function startApp(agent, initialPrompt) {
     approvalState,
   }), tui);
 
-  const contextBarText = new Text(buildContextBar(null), 0, 0);
+  const footerBar = new FooterBar(() => ({
+    modelName: agent.model,
+    tokenUsage,
+    gitStats,
+  }));
 
   const editor = new Editor(tui, editorTheme);
+  editor.setPaddingX(1);
 
-  // ── Add message to the log ──
-  function addLog(text) {
-    logContainer.addChild(new Text(text, 0, 0));
-    tui.requestRender();
-  }
+  // Set up autocomplete
+  const slashCommands = [
+    { name: "model", description: "Switch or list models (/model <name> or /model list)" },
+    { name: "clear", description: "Clear conversation history" },
+    { name: "inspect", description: "Dump context to file" },
 
-  function addLogMarkdown(prefixLine, rest) {
-    logContainer.addChild(new Text("", 0, 0)); // blank spacer line
-    logContainer.addChild(new Text(prefixLine, 0, 0));
-    if (rest && rest.trim()) {
-      logContainer.addChild(new Markdown(rest, 1, 0, markdownTheme));
-    }
-    tui.requestRender();
-  }
+    { name: "exit", description: "Exit the agent" },
+  ];
+  const autocompleteProvider = new CombinedAutocompleteProvider(slashCommands, agent.jailDirectory || process.cwd());
+  editor.setAutocompleteProvider(autocompleteProvider);
+
+  // ── ChatView ──
+  const chatView = new ChatView(tui, editor, statusArea, footerBar);
 
   function updateContextBar() {
-    contextBarText.setText(buildContextBar(tokenUsage));
+    // Refresh git stats when updating context bar
+    try {
+      gitStats = getGitStats(agent.jailDirectory || process.cwd());
+    } catch {
+      gitStats = null;
+    }
+    footerBar.invalidate();
     tui.requestRender();
   }
+
+  // Load git stats on startup
+  updateContextBar();
 
   // ── Transition from loading to main UI ──
   function switchToMainUI() {
@@ -337,13 +508,8 @@ export function startApp(agent, initialPrompt) {
     loadingAnim.stop();
     tui.removeChild(loadingAnim);
 
-    const headerLine = chalk.dim("╭─ ◉ smol-agent ") + chalk.magenta(agent.model) + chalk.dim(" ─╮");
-    tui.addChild(new Text(headerLine, 0, 0));
-    tui.addChild(new Spacer(1));
-    tui.addChild(logContainer);
-    tui.addChild(statusArea);
-    tui.addChild(editor);
-    tui.addChild(contextBarText);
+    tui.addChild(chatView);
+    tui.setFocus(chatView);
     tui.requestRender();
 
     if (initialPrompt) {
@@ -361,9 +527,59 @@ export function startApp(agent, initialPrompt) {
       process.exit(0);
     }
 
-    if (trimmed === "/reset") {
+    if (trimmed === "/clear") {
       agent.reset();
-      addLog(chalk.dim("    ⎿  (conversation reset)"));
+      chatView.addLog(chalk.dim("    ⎿  (conversation cleared)"));
+      return;
+    }
+
+    if (trimmed === "/reflect") {
+      // Read recent logs and analyze for skill development opportunities
+      const logs = readRecentLogs(1000);
+      if (!logs) {
+        chatView.addLog(chalk.red(" ✗ No logs available for reflection"));
+        return;
+      }
+
+      const reflectPrompt = `Analyze the following agent session logs to identify patterns, repetitive tasks, or areas where the agent could benefit from a new skill. A skill is a reusable procedure that helps the agent work more effectively.
+
+## What to look for:
+1. **Repetitive patterns** - Similar tool call sequences that could be automated
+2. **Common mistakes** - Errors that could be avoided with a checklist or procedure
+3. **Missing knowledge** - Domain-specific patterns the agent repeatedly discovers
+4. **Workflow improvements** - Multi-step processes that could be documented
+
+## Instructions:
+- If you find a good skill opportunity, write it as a markdown file to .smol-agent/skills/<name>.md
+- Use YAML frontmatter with: name, description, triggers (when to use)
+- The skill content should be practical guidance the agent can follow
+- After writing the skill, confirm it was created and explain why it will help
+
+## Agent Logs:
+\`\`\`
+${logs}
+\`\`\`
+
+Reflect on these logs and determine if there's a skill worth creating. If the logs don't show clear patterns for improvement, explain what you observed.`;
+
+      chatView.addLog(chalk.dim("    ⎿  (reflecting on agent logs for skill opportunities...)"));
+      chatView.addLog("");
+      busy = true;
+      statusText = "reflecting...";
+      updateStatus();
+
+      try {
+        const response = await agent.run(reflectPrompt);
+        // Refresh context to pick up any newly created skills
+        await agent.refreshContext();
+        chatView.addLog(chalk.dim("    ⎿  (skills context refreshed)"));
+      } catch (err) {
+        chatView.addLog(chalk.red(` ✗ Reflection failed: ${err.message}`));
+      } finally {
+        busy = false;
+        statusText = "";
+        updateStatus();
+      }
       return;
     }
 
@@ -372,9 +588,9 @@ export function startApp(agent, initialPrompt) {
         const context = await agent.getContext();
         const contextPath = join(agent.jailDirectory, "CONTEXT.md");
         writeFileSync(contextPath, context, "utf-8");
-        addLog(chalk.dim(`    ⎿  (context saved to ${contextPath})`));
+        chatView.addLog(chalk.dim(`    ⎿  (context saved to ${contextPath})`));
       } catch (err) {
-        addLog(chalk.red(` ✗ Failed to save context: ${err.message}`));
+        chatView.addLog(chalk.red(` ✗ Failed to save context: ${err.message}`));
       }
       return;
     }
@@ -382,47 +598,52 @@ export function startApp(agent, initialPrompt) {
     if (trimmed.startsWith("/model")) {
       const parts = trimmed.split(/\s+/);
       if (parts.length === 1) {
-        addLog(chalk.dim(`    ⎿  Current model: ${agent.model}`));
+        chatView.addLog(chalk.dim(`    ⎿  Current model: ${agent.model}`));
       } else if (parts[1] === "?" || parts[1] === "list") {
         try {
           const models = await listModels(agent.client);
           if (models.length === 0) {
-            addLog(chalk.dim("    ⎿  No models found. Pull a model with: ollama pull <model>"));
+            chatView.addLog(chalk.dim("    ⎿  No models found. Pull a model with: ollama pull <model>"));
           } else {
             const sorted = models.map((m) => m.name).sort((a, b) => a.localeCompare(b));
-            addLog(chalk.dim("    ⎿  Available models:\n" + sorted.map((n) => `        ${n}`).join("\n")));
+            chatView.addLog(chalk.dim("    ⎿  Available models:\n" + sorted.map((n) => `        ${n}`).join("\n")));
           }
         } catch (err) {
-          addLog(chalk.red(` ✗ Failed to list models: ${err.message}`));
+          chatView.addLog(chalk.red(` ✗ Failed to list models: ${err.message}`));
         }
       } else {
         const newModel = parts[1];
         agent.setModel(newModel);
-        addLog(chalk.dim(`    ⎿  Switched to model: ${newModel}`));
+        chatView.addLog(chalk.dim(`    ⎿  Switched to model: ${newModel}`));
+        updateContextBar();
       }
       return;
     }
 
-    addLog("");
-    addLog(chalk.green.bold(" > ") + chalk.bold(trimmed));
+    chatView.addLog("");
+    chatView.addLog(chalk.green.bold(" > ") + chalk.bold(trimmed));
     busy = true;
     statusText = "thinking...";
     tui.requestRender();
 
     try {
-      const answer = await agent.run(trimmed);
+      await agent.run(trimmed);
+      // Flush remaining streamed content (only text from the last iteration,
+      // since stream_start resets streamContent each iteration).
+      // This avoids duplication when the model repeats earlier text.
+      const finalStream = streamContent.replace(/<thinking>[\s\S]*?<\/thinking>/g, "").trim();
       streamContent = "";
       if (streamThrottle) { clearTimeout(streamThrottle); streamThrottle = null; }
-      if (answer) {
-        const lines = answer.split("\n");
+      if (finalStream) {
+        const lines = finalStream.split("\n");
         const first = lines[0];
         const rest = lines.slice(1).join("\n").trim();
-        addLogMarkdown(chalk.cyan.bold(" ⏺  ") + first, rest);
+        chatView.addLogMarkdown(chalk.cyan.bold(" ▸  ") + first, rest);
       }
     } catch (err) {
       streamContent = "";
       if (streamThrottle) { clearTimeout(streamThrottle); streamThrottle = null; }
-      addLog(chalk.red(` ✗ ${err.message}`));
+      chatView.addLog(chalk.red(` ✗ ${err.message}`));
     }
 
     busy = false;
@@ -432,11 +653,13 @@ export function startApp(agent, initialPrompt) {
 
   // ── Editor submit ──
   editor.onSubmit = (text) => {
+    // Add to history for up/down arrow navigation
+    editor.addToHistory(text);
     editor.setText("");
 
     if (askState) {
       const answer = text.trim();
-      addLog(chalk.dim("    ⎿  ") + chalk.bold(`(answer) ${answer}`));
+      chatView.addLog(chalk.dim("    ⎿  ") + chalk.bold(`(answer) ${answer}`));
       askState.resolve(answer);
       askState = null;
       busy = true;
@@ -449,8 +672,8 @@ export function startApp(agent, initialPrompt) {
       const nudge = text.trim();
       if (nudge) {
         agent.inject(nudge);
-        addLog("");
-        addLog(chalk.yellow.bold(" >> ") + chalk.yellow(nudge));
+        chatView.addLog("");
+        chatView.addLog(chalk.yellow.bold(" >> ") + chalk.yellow(nudge));
       }
       return;
     }
@@ -485,27 +708,27 @@ export function startApp(agent, initialPrompt) {
     const formatted = lines.map((l, i) =>
       chalk.dim(i === 0 ? `    🧠 ${l}` : `       ${l}`),
     ).join("\n");
-    addLog(formatted);
+    chatView.addLog(formatted);
   };
 
   const onToolCall = ({ name, args }) => {
     if (streamContent) {
-      const text = streamContent;
+      const text = streamContent.replace(/<thinking>[\s\S]*?<\/thinking>/g, "").trim();
       streamContent = "";
       if (streamThrottle) { clearTimeout(streamThrottle); streamThrottle = null; }
-      const lines = text.split("\n");
-      const first = lines[0];
-      const rest = lines.slice(1).join("\n").trim();
-      addLogMarkdown(chalk.cyan.bold(" ⏺  ") + first, rest);
+      if (text) {
+        const lines = text.split("\n");
+        const first = lines[0];
+        const rest = lines.slice(1).join("\n").trim();
+        chatView.addLogMarkdown(chalk.cyan.bold(" ▸  ") + first, rest);
+      }
     }
     const summary = summarizeArgs(args);
-    statusText = `${name}(${summary})`;
-    addLog(chalk.dim(`    ⎿  [tool] ${name}(${summary})`));
+    chatView.addLog(chalk.dim(`    ⎿  [tool] ${name}(${summary})`));
     tui.requestRender();
   };
 
   const onToolResult = () => {
-    statusText = "";
     tui.requestRender();
   };
 
@@ -517,18 +740,18 @@ export function startApp(agent, initialPrompt) {
   const onContextReady = () => {
     contextReady = true;
     if (minTimeElapsed) {
-      addLog(chalk.dim("    ⎿  (project context gathered)"));
+      chatView.addLog(chalk.dim("    ⎿  (project context gathered)"));
       switchToMainUI();
     }
   };
 
   const onError = (error) => {
-    addLog(chalk.red(` ✗ ${error.message}`));
+    chatView.addLog(chalk.red(` ✗ ${error.message}`));
     tui.requestRender();
   };
 
   const onRetry = ({ attempt, maxRetries, message: msg }) => {
-    addLog(chalk.dim(`    ⎿  (retry ${attempt}/${maxRetries}: ${msg})`));
+    chatView.addLog(chalk.dim(`    ⎿  (retry ${attempt}/${maxRetries}: ${msg})`));
     statusText = `retrying (${attempt}/${maxRetries})...`;
     tui.requestRender();
   };
@@ -571,12 +794,15 @@ export function startApp(agent, initialPrompt) {
   agent.setApprovalHandler((name, args) =>
     new Promise((resolve) => {
       approvalState = { name, args, resolve };
+      busy = false;
+      statusText = "";
       tui.requestRender();
     }),
   );
 
   // ── Global key handler ──
   tui.addInputListener((data) => {
+    // Ctrl+C: cancel/exit
     if (matchesKey(data, "ctrl+c")) {
       const now = Date.now();
       if (now - lastCtrlC < 500) {
@@ -585,7 +811,7 @@ export function startApp(agent, initialPrompt) {
       } else {
         if (approvalState) {
           const { name, resolve } = approvalState;
-          addLog(chalk.dim(`    ⎿  (denied ${name})`));
+          chatView.addLog(chalk.dim(`    ⎿  (denied ${name})`));
           resolve({ approved: false });
           approvalState = null;
           lastCtrlC = now;
@@ -595,11 +821,11 @@ export function startApp(agent, initialPrompt) {
           agent.cancel();
           streamContent = "";
           if (streamThrottle) { clearTimeout(streamThrottle); streamThrottle = null; }
-          addLog(chalk.dim("    ⎿  (operation cancelled — press Ctrl+C again to quit)"));
+          chatView.addLog(chalk.dim("    ⎿  (operation cancelled — press Ctrl+C again to quit)"));
           busy = false;
           statusText = "";
         } else {
-          addLog(chalk.dim("    ⎿  (press Ctrl+C again to quit)"));
+          chatView.addLog(chalk.dim("    ⎿  (press Ctrl+C again to quit)"));
         }
         tui.requestRender();
         lastCtrlC = now;
@@ -607,21 +833,26 @@ export function startApp(agent, initialPrompt) {
       return { consume: true };
     }
 
+    // Approval state: y/n/a
     if (approvalState) {
       const { name, resolve } = approvalState;
       if (data === "y" || matchesKey(data, "enter")) {
-        addLog(chalk.dim(`    ⎿  (approved ${name})`));
+        chatView.addLog(chalk.dim(`    ⎿  (approved ${name})`));
         resolve({ approved: true });
         approvalState = null;
       } else if (data === "n") {
-        addLog(chalk.dim(`    ⎿  (denied ${name})`));
+        chatView.addLog(chalk.dim(`    ⎿  (denied ${name})`));
         resolve({ approved: false });
         approvalState = null;
       } else if (data === "a") {
-        addLog(chalk.dim("    ⎿  (approved all future tool calls — saved to settings)"));
+        chatView.addLog(chalk.dim("    ⎿  (approved all future tool calls — saved to settings)"));
         resolve({ approved: true, approveAll: true });
         approvalState = null;
         saveSetting(agent.jailDirectory, "autoApprove", true).catch(() => {});
+      }
+      if (!approvalState) {
+        busy = true;
+        statusText = "thinking...";
       }
       tui.requestRender();
       return { consume: true };
@@ -656,7 +887,7 @@ export function startApp(agent, initialPrompt) {
   setTimeout(() => {
     minTimeElapsed = true;
     if (contextReady) {
-      addLog(chalk.dim("    ⎿  (project context gathered)"));
+      chatView.addLog(chalk.dim("    ⎿  (project context gathered)"));
       switchToMainUI();
     }
   }, 5000);

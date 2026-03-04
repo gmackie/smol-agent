@@ -63,10 +63,8 @@ Options:
       --help                Show this help message
 
 Interactive Commands:
-  /readonly or /ro   Toggle read-only mode (disables write tools)
-  /reset             Clear conversation history
+  /clear             Clear conversation history
   /inspect           Dump current context to CONTEXT.md
-  shift+tab          Toggle read-only mode
   Ctrl+C             Cancel current operation (double-tap to exit)
   exit / quit        Exit the agent
 
