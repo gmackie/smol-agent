@@ -52,6 +52,7 @@ jobs:
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
 
       - name: Run E2E smoke test (single model)
+        id: e2e
         if: steps.check_key.outputs.skip != 'true'
         env:
           # Use a single fast model for PR checks
@@ -74,19 +75,47 @@ jobs:
           echo "=========================================="
           echo ""
 
-          node test/e2e/runner.js --json > test-results.json 2> test-output.log
-          TEST_EXIT_CODE=$?
+          # Run tests — don't exit on failure, we check the score ourselves
+          node test/e2e/runner.js --json > test-results.json 2> test-output.log || true
 
           cat test-output.log
 
-          echo ""
-          if [ $TEST_EXIT_CODE -eq 0 ]; then
-            echo "All E2E tests passed."
-          else
-            echo "Some E2E tests failed — see output above."
+      - name: Check E2E score threshold
+        if: steps.check_key.outputs.skip != 'true'
+        run: |
+          SCORE_THRESHOLD=0.7
+
+          if [ ! -f test-results.json ] || ! jq empty test-results.json 2>/dev/null; then
+            echo "::error::E2E test results missing or invalid"
+            exit 1
           fi
 
-          exit $TEST_EXIT_CODE
+          SCORE=$(jq -r '.aggregate.normalized' test-results.json)
+          PASSED=$(jq -r '.aggregate.passed' test-results.json)
+          TOTAL=$(jq -r '.aggregate.total' test-results.json)
+
+          echo ""
+          echo "=========================================="
+          echo "E2E Score: ${SCORE} (threshold: ${SCORE_THRESHOLD})"
+          echo "Passed: ${PASSED}/${TOTAL} scenarios"
+          echo "=========================================="
+          echo ""
+
+          # Fail the PR if score is below threshold
+          PASS=$(echo "$SCORE $SCORE_THRESHOLD" | awk '{print ($1 >= $2) ? "true" : "false"}')
+
+          if [ "$PASS" = "true" ]; then
+            echo "E2E score ${SCORE} meets threshold ${SCORE_THRESHOLD}"
+          else
+            echo "::error::E2E score ${SCORE} is below threshold ${SCORE_THRESHOLD} — PR blocked"
+
+            # Show which scenarios failed for quick diagnosis
+            echo ""
+            echo "Failed scenarios:"
+            jq -r '.results[] | select(.passed == false) | "  ✗ \(.name): \(.score) — \(.checks | map(select(.passed == false)) | map(.name) | join(", "))"' test-results.json
+
+            exit 1
+          fi
 
       - name: Upload test output
         uses: actions/upload-artifact@v4
