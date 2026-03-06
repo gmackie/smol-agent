@@ -63,7 +63,7 @@ export function setLogBaseDir(dir) {
  * Create a logger instance with configurable level
  */
 export function createLogger(level = LOG_LEVEL) {
-  let minLevel = LEVELS[level] || LEVELS.info;
+  let minLevel = LEVELS[level] ?? LEVELS.info;
 
   return {
     debug: (message) => {

@@ -3,133 +3,121 @@
  * Tests the jail boundary security logic
  */
 
-import { describe, test, assertEqual, assertTrue, assertThrows, createTempDir, cleanupTempDir, createTestFile } from '../test-utils.js';
+import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
 import { resolveJailedPath, validateJailedPath } from '../../src/path-utils.js';
+import { createTempDir, cleanupTempDir, createTestFile } from '../test-utils.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
-export default async function runPathUtilsTests() {
+describe('resolveJailedPath', () => {
   let tempDir;
-  
-  await describe('resolveJailedPath', async () => {
-    await test('resolves simple relative paths', async () => {
-      tempDir = createTempDir();
-      const result = resolveJailedPath(tempDir, 'test.txt');
-      assertEqual(result, path.join(tempDir, 'test.txt'));
-      cleanupTempDir(tempDir);
-    });
 
-    await test('resolves nested relative paths', async () => {
-      tempDir = createTempDir();
-      const result = resolveJailedPath(tempDir, 'subdir/nested/file.txt');
-      assertEqual(result, path.join(tempDir, 'subdir', 'nested', 'file.txt'));
-      cleanupTempDir(tempDir);
-    });
-
-    await test('handles absolute paths within jail', async () => {
-      tempDir = createTempDir();
-      const absolutePath = path.join(tempDir, 'file.txt');
-      const result = resolveJailedPath(tempDir, absolutePath);
-      assertEqual(result, absolutePath);
-      cleanupTempDir(tempDir);
-    });
-
-    await test('throws on path traversal with ..', async () => {
-      tempDir = createTempDir();
-      await assertThrows(
-        () => resolveJailedPath(tempDir, '../outside.txt'),
-        'escapes'
-      );
-      cleanupTempDir(tempDir);
-    });
-
-    await test('throws on deep path traversal', async () => {
-      tempDir = createTempDir();
-      await assertThrows(
-        () => resolveJailedPath(tempDir, 'subdir/../../outside.txt'),
-        'escapes'
-      );
-      cleanupTempDir(tempDir);
-    });
-
-    await test('throws on absolute path outside jail', async () => {
-      tempDir = createTempDir();
-      await assertThrows(
-        () => resolveJailedPath(tempDir, '/etc/passwd'),
-        'escapes'
-      );
-      cleanupTempDir(tempDir);
-    });
+  beforeEach(() => {
+    tempDir = createTempDir();
   });
 
-  await describe('resolveJailedPath symlink handling', async () => {
-    await test('handles symlinks pointing inside jail', async () => {
-      tempDir = createTempDir();
-      const targetDir = path.join(tempDir, 'target');
-      const linkDir = path.join(tempDir, 'link');
-      fs.mkdirSync(targetDir);
-      createTestFile(targetDir, 'file.txt', 'content');
-      
-      try {
-        fs.symlinkSync(targetDir, linkDir, 'dir');
-        const result = resolveJailedPath(linkDir, 'file.txt');
-        assertTrue(result.includes('file.txt'));
-      } catch (err) {
-        // Symlinks may not be supported on this platform
-        if (err.code !== 'EPERM' && err.code !== 'ENOSYS') {
-          throw err;
-        }
-      }
-      cleanupTempDir(tempDir);
-    });
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+  });
 
-    await test('blocks symlinks pointing outside jail', async () => {
-      tempDir = createTempDir();
-      const outsideDir = createTempDir('outside-');
-      const linkPath = path.join(tempDir, 'escape');
-      
-      try {
-        fs.symlinkSync(outsideDir, linkPath, 'dir');
-        await assertThrows(
-          () => resolveJailedPath(tempDir, 'escape/file.txt'),
-          'escapes'
-        );
-      } catch (err) {
-        // Symlinks may not be supported
-        if (err.code !== 'EPERM' && err.code !== 'ENOSYS') {
-          throw err;
-        }
+  test('resolves simple relative paths', () => {
+    const result = resolveJailedPath(tempDir, 'test.txt');
+    expect(result).toBe(path.join(tempDir, 'test.txt'));
+  });
+
+  test('resolves nested relative paths', () => {
+    const result = resolveJailedPath(tempDir, 'subdir/nested/file.txt');
+    expect(result).toBe(path.join(tempDir, 'subdir', 'nested', 'file.txt'));
+  });
+
+  test('handles absolute paths within jail', () => {
+    const absolutePath = path.join(tempDir, 'file.txt');
+    const result = resolveJailedPath(tempDir, absolutePath);
+    expect(result).toBe(absolutePath);
+  });
+
+  test('throws on path traversal with ..', () => {
+    expect(() => resolveJailedPath(tempDir, '../outside.txt')).toThrow('escapes');
+  });
+
+  test('throws on deep path traversal', () => {
+    expect(() => resolveJailedPath(tempDir, 'subdir/../../outside.txt')).toThrow('escapes');
+  });
+
+  test('throws on absolute path outside jail', () => {
+    expect(() => resolveJailedPath(tempDir, '/etc/passwd')).toThrow('escapes');
+  });
+});
+
+describe('resolveJailedPath symlink handling', () => {
+  let tempDir;
+
+  beforeEach(() => {
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+  });
+
+  test('handles symlinks pointing inside jail', () => {
+    const targetDir = path.join(tempDir, 'target');
+    const linkDir = path.join(tempDir, 'link');
+    fs.mkdirSync(targetDir);
+    createTestFile(targetDir, 'file.txt', 'content');
+
+    try {
+      fs.symlinkSync(targetDir, linkDir, 'dir');
+      const result = resolveJailedPath(linkDir, 'file.txt');
+      expect(result).toContain('file.txt');
+    } catch (err) {
+      // Symlinks may not be supported on this platform
+      if (err.code !== 'EPERM' && err.code !== 'ENOSYS') {
+        throw err;
       }
-      cleanupTempDir(tempDir);
+    }
+  });
+
+  test('blocks symlinks pointing outside jail', () => {
+    const outsideDir = createTempDir('outside-');
+    const linkPath = path.join(tempDir, 'escape');
+
+    try {
+      fs.symlinkSync(outsideDir, linkPath, 'dir');
+      expect(() => resolveJailedPath(tempDir, 'escape/file.txt')).toThrow('escapes');
+    } catch (err) {
+      // Symlinks may not be supported
+      if (err.code !== 'EPERM' && err.code !== 'ENOSYS') {
+        throw err;
+      }
+    } finally {
       cleanupTempDir(outsideDir);
-    });
+    }
+  });
+});
+
+describe('validateJailedPath', () => {
+  let tempDir;
+
+  beforeEach(() => {
+    tempDir = createTempDir();
   });
 
-  await describe('validateJailedPath', async () => {
-    await test('validates existing files', async () => {
-      tempDir = createTempDir();
-      createTestFile(tempDir, 'exists.txt', 'content');
-      const result = validateJailedPath(tempDir, 'exists.txt');
-      assertEqual(result, path.join(tempDir, 'exists.txt'));
-      cleanupTempDir(tempDir);
-    });
-
-    await test('throws for non-existent files', async () => {
-      tempDir = createTempDir();
-      await assertThrows(
-        () => validateJailedPath(tempDir, 'nonexistent.txt'),
-        'does not exist'
-      );
-      cleanupTempDir(tempDir);
-    });
-
-    await test('throws for path traversal attempts', async () => {
-      tempDir = createTempDir();
-      await assertThrows(
-        () => validateJailedPath(tempDir, '../outside.txt'),
-        'escapes'
-      );
-      cleanupTempDir(tempDir);
-    });
+  afterEach(() => {
+    cleanupTempDir(tempDir);
   });
-}
+
+  test('validates existing files', () => {
+    createTestFile(tempDir, 'exists.txt', 'content');
+    const result = validateJailedPath(tempDir, 'exists.txt');
+    expect(result).toBe(path.join(tempDir, 'exists.txt'));
+  });
+
+  test('throws for non-existent files', () => {
+    expect(() => validateJailedPath(tempDir, 'nonexistent.txt')).toThrow('does not exist');
+  });
+
+  test('throws for path traversal attempts', () => {
+    expect(() => validateJailedPath(tempDir, '../outside.txt')).toThrow('escapes');
+  });
+});

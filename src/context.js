@@ -66,11 +66,18 @@ export async function gatherContext(cwd, contextSize = 100) {
     sections.push(`## Codebase context docs\nAvailable: ${docs.join(", ")}\nCheck .smol-agent/docs/<name>.md before exploring a directory.`);
   }
 
-  // 8. Skills from .smol-agent/skills/
+  // 8. Skills from global and local directories (SKILL.md format)
   const skills = await loadSkills(cwd);
   if (skills.length > 0) {
-    const lines = skills.map(s => `- **${s.name}**: ${s.description}`);
-    sections.push(`## Skills\n${lines.join("\n")}\nRead .smol-agent/skills/<file>.md before starting a task if a relevant skill exists.`);
+    const lines = skills.map(s => {
+      let line = `- **${s.name}**: ${s.description}`;
+      // Show resource indicators for standard format skills
+      if (s.hasScripts) line += " [scripts]";
+      if (s.hasReferences) line += " [references]";
+      if (s.hasAssets) line += " [assets]";
+      return line;
+    });
+    sections.push(`## Skills\n${lines.join("\n")}\n\nSkills use SKILL.md format: .smol-agent/skills/<name>/SKILL.md\nGlobal: ~/.config/smol-agent/skills/<name>/SKILL.md\nUse read_file to read a skill's full instructions before starting a task.`);
   }
 
   return sections.join("\n\n");

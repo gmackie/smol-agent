@@ -1,148 +1,177 @@
 /**
  * Unit tests for settings module
- * Tests settings load/save functionality
+ * Tests loading and saving settings with security restrictions
  */
 
-import { describe, test, assertEqual, assertTrue } from '../test-utils.js';
-import fs from 'node:fs/promises';
+import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
+import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { loadSettings, saveSettings, saveSetting } from '../../src/settings.js';
+import { createTempDir, cleanupTempDir } from '../test-utils.js';
 
-export default async function runSettingsTests() {
-  await describe('loadSettings', async () => {
-    await test('returns defaults when no settings file exists', async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'settings-test-'));
-      try {
-        const settings = await loadSettings(tempDir);
-        assertEqual(settings.autoApprove, false);
-        assertTrue(typeof settings === 'object');
-      } finally {
-        await fs.rm(tempDir, { recursive: true });
-      }
-    });
+describe('loadSettings', () => {
+  let tempDir;
 
-    await test('loads settings from file', async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'settings-test-'));
-      try {
-        const settingsDir = path.join(tempDir, '.smol-agent');
-        await fs.mkdir(settingsDir, { recursive: true });
-        await fs.writeFile(
-          path.join(settingsDir, 'settings.json'),
-          JSON.stringify({ autoApprove: true, customSetting: 'value' })
-        );
-        
-        const settings = await loadSettings(tempDir);
-        assertEqual(settings.autoApprove, true);
-        assertEqual(settings.customSetting, 'value');
-      } finally {
-        await fs.rm(tempDir, { recursive: true });
-      }
-    });
-
-    await test('merges with defaults for partial settings', async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'settings-test-'));
-      try {
-        const settingsDir = path.join(tempDir, '.smol-agent');
-        await fs.mkdir(settingsDir, { recursive: true });
-        await fs.writeFile(
-          path.join(settingsDir, 'settings.json'),
-          JSON.stringify({ customSetting: 42 })
-        );
-        
-        const settings = await loadSettings(tempDir);
-        assertEqual(settings.autoApprove, false); // default
-        assertEqual(settings.customSetting, 42);   // from file
-      } finally {
-        await fs.rm(tempDir, { recursive: true });
-      }
-    });
+  beforeEach(() => {
+    tempDir = createTempDir();
   });
 
-  await describe('saveSettings', async () => {
-    await test('creates settings directory if needed', async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'settings-test-'));
-      try {
-        await saveSettings(tempDir, { autoApprove: true });
-        
-        const stat = await fs.stat(path.join(tempDir, '.smol-agent'));
-        assertTrue(stat.isDirectory());
-      } finally {
-        await fs.rm(tempDir, { recursive: true });
-      }
-    });
-
-    await test('writes settings file', async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'settings-test-'));
-      try {
-        await saveSettings(tempDir, { autoApprove: true, theme: 'dark' });
-        
-        const content = await fs.readFile(
-          path.join(tempDir, '.smol-agent', 'settings.json'),
-          'utf-8'
-        );
-        const parsed = JSON.parse(content);
-        assertEqual(parsed.autoApprove, true);
-        assertEqual(parsed.theme, 'dark');
-      } finally {
-        await fs.rm(tempDir, { recursive: true });
-      }
-    });
-
-    await test('merges with existing settings', async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'settings-test-'));
-      try {
-        // Write initial settings
-        await saveSettings(tempDir, { settingA: 'a', settingB: 'b' });
-        // Update one setting
-        await saveSettings(tempDir, { settingB: 'updated' });
-        
-        const content = await fs.readFile(
-          path.join(tempDir, '.smol-agent', 'settings.json'),
-          'utf-8'
-        );
-        const parsed = JSON.parse(content);
-        assertEqual(parsed.settingA, 'a');        // preserved
-        assertEqual(parsed.settingB, 'updated');  // updated
-      } finally {
-        await fs.rm(tempDir, { recursive: true });
-      }
-    });
+  afterEach(() => {
+    cleanupTempDir(tempDir);
   });
 
-  await describe('saveSetting', async () => {
-    await test('saves single setting', async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'settings-test-'));
-      try {
-        await saveSetting(tempDir, 'myKey', 'myValue');
-        
-        const content = await fs.readFile(
-          path.join(tempDir, '.smol-agent', 'settings.json'),
-          'utf-8'
-        );
-        const parsed = JSON.parse(content);
-        assertEqual(parsed.myKey, 'myValue');
-      } finally {
-        await fs.rm(tempDir, { recursive: true });
-      }
-    });
-
-    await test('preserves existing settings when saving single key', async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'settings-test-'));
-      try {
-        await saveSettings(tempDir, { existingKey: 'existing' });
-        await saveSetting(tempDir, 'newKey', 'newValue');
-        
-        const content = await fs.readFile(
-          path.join(tempDir, '.smol-agent', 'settings.json'),
-          'utf-8'
-        );
-        const parsed = JSON.parse(content);
-        assertEqual(parsed.existingKey, 'existing');
-        assertEqual(parsed.newKey, 'newValue');
-      } finally {
-        await fs.rm(tempDir, { recursive: true });
-      }
-    });
+  test('returns defaults when no settings file exists', async () => {
+    const settings = await loadSettings(tempDir);
+    expect(settings.autoApprove).toBe(false);
   });
-}
+
+  test('loads settings from file', async () => {
+    const settingsDir = path.join(tempDir, '.smol-agent');
+    fs.mkdirSync(settingsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(settingsDir, 'settings.json'),
+      JSON.stringify({ customSetting: 'value' })
+    );
+
+    const settings = await loadSettings(tempDir);
+    expect(settings.customSetting).toBe('value');
+  });
+
+  test('strips autoApprove from file (security)', async () => {
+    const settingsDir = path.join(tempDir, '.smol-agent');
+    fs.mkdirSync(settingsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(settingsDir, 'settings.json'),
+      JSON.stringify({ autoApprove: true, otherSetting: 'value' })
+    );
+
+    const settings = await loadSettings(tempDir);
+    // autoApprove should be stripped (security: only CLI can set it)
+    expect(settings.autoApprove).toBe(false);
+    expect(settings.otherSetting).toBe('value');
+  });
+
+  test('merges with defaults', async () => {
+    const settingsDir = path.join(tempDir, '.smol-agent');
+    fs.mkdirSync(settingsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(settingsDir, 'settings.json'),
+      JSON.stringify({ newKey: 'newValue' })
+    );
+
+    const settings = await loadSettings(tempDir);
+    expect(settings.autoApprove).toBe(false); // From defaults
+    expect(settings.newKey).toBe('newValue'); // From file
+  });
+
+  test('handles malformed JSON', async () => {
+    const settingsDir = path.join(tempDir, '.smol-agent');
+    fs.mkdirSync(settingsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(settingsDir, 'settings.json'),
+      '{ invalid json }'
+    );
+
+    const settings = await loadSettings(tempDir);
+    // Should return defaults on error
+    expect(settings.autoApprove).toBe(false);
+  });
+});
+
+describe('saveSettings', () => {
+  let tempDir;
+
+  beforeEach(() => {
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+  });
+
+  test('creates settings directory if missing', async () => {
+    // No .smol-agent directory exists
+    await saveSettings(tempDir, { test: 'value' });
+
+    const settingsPath = path.join(tempDir, '.smol-agent', 'settings.json');
+    expect(fs.existsSync(settingsPath)).toBe(true);
+  });
+
+  test('writes settings to file', async () => {
+    await saveSettings(tempDir, { myKey: 'myValue' });
+
+    const content = fs.readFileSync(
+      path.join(tempDir, '.smol-agent', 'settings.json'),
+      'utf-8'
+    );
+    const parsed = JSON.parse(content);
+    expect(parsed.myKey).toBe('myValue');
+  });
+
+  test('merges with existing settings', async () => {
+    const settingsDir = path.join(tempDir, '.smol-agent');
+    fs.mkdirSync(settingsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(settingsDir, 'settings.json'),
+      JSON.stringify({ existing: 'kept', override: 'old' })
+    );
+
+    await saveSettings(tempDir, { override: 'new', added: 'extra' });
+
+    const content = fs.readFileSync(
+      path.join(tempDir, '.smol-agent', 'settings.json'),
+      'utf-8'
+    );
+    const parsed = JSON.parse(content);
+    expect(parsed.existing).toBe('kept');
+    expect(parsed.override).toBe('new');
+    expect(parsed.added).toBe('extra');
+  });
+
+  test('returns merged settings', async () => {
+    const result = await saveSettings(tempDir, { key: 'value' });
+    expect(result.key).toBe('value');
+  });
+});
+
+describe('saveSetting', () => {
+  let tempDir;
+
+  beforeEach(() => {
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+  });
+
+  test('saves single key-value pair', async () => {
+    await saveSetting(tempDir, 'singleKey', 'singleValue');
+
+    const content = fs.readFileSync(
+      path.join(tempDir, '.smol-agent', 'settings.json'),
+      'utf-8'
+    );
+    const parsed = JSON.parse(content);
+    expect(parsed.singleKey).toBe('singleValue');
+  });
+
+  test('preserves existing settings', async () => {
+    const settingsDir = path.join(tempDir, '.smol-agent');
+    fs.mkdirSync(settingsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(settingsDir, 'settings.json'),
+      JSON.stringify({ otherKey: 'otherValue' })
+    );
+
+    await saveSetting(tempDir, 'newKey', 'newValue');
+
+    const content = fs.readFileSync(
+      path.join(tempDir, '.smol-agent', 'settings.json'),
+      'utf-8'
+    );
+    const parsed = JSON.parse(content);
+    expect(parsed.otherKey).toBe('otherValue');
+    expect(parsed.newKey).toBe('newValue');
+  });
+});

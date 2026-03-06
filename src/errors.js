@@ -55,9 +55,9 @@ export function classifyError(err) {
     err.code === 'ECONNABORTED' ||
     err.status === 429 ||
     (err.status >= 500 && err.status < 600) ||
-    err.message?.includes('timeout') ||
-    err.message?.includes('deadline') ||
-    err.message?.includes('rate limit') ||
+    err.message?.toLowerCase().includes('timeout') ||
+    err.message?.toLowerCase().includes('deadline') ||
+    err.message?.toLowerCase().includes('rate limit') ||
     err.message?.includes('slot unavailable')
   ) {
     return 'transient';

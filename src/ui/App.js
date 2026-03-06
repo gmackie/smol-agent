@@ -19,6 +19,7 @@ import { setAskHandler } from "../tools/ask_user.js";
 import { saveSetting } from "../settings.js";
 import { listModels } from "../ollama.js";
 import { logger, readRecentLogs } from "../logger.js";
+import { getSkillNames } from "../skills.js";
 
 // ═══ Loading animation (SMOL AGENT rain effect) ═══
 
@@ -496,14 +497,31 @@ export function startApp(agent, initialPrompt) {
   const editor = new Editor(tui, editorTheme);
   editor.setPaddingX(1);
 
-  // Set up autocomplete
+  // Set up autocomplete with built-in slash commands
   const slashCommands = [
     { name: "model", description: "Switch or list models (/model <name> or /model list)" },
     { name: "clear", description: "Clear conversation history" },
     { name: "inspect", description: "Dump context to file" },
-
+    { name: "reload-skills", description: "Reload skills from global and local directories" },
+    { name: "skills", description: "List available skills" },
     { name: "exit", description: "Exit the agent" },
   ];
+  
+  // Load skills and add them as slash commands
+  let skillCommands = [];
+  async function loadSkillCommands() {
+    try {
+      const skills = await getSkillNames(agent.jailDirectory || process.cwd());
+      skillCommands = skills.map(s => ({ name: s.name, description: s.description }));
+      // Re-create autocomplete provider with updated commands
+      const allCommands = [...slashCommands, ...skillCommands];
+      editor.setAutocompleteProvider(new CombinedAutocompleteProvider(allCommands, agent.jailDirectory || process.cwd()));
+    } catch (err) {
+      logger.debug(`Failed to load skills for autocomplete: ${err.message}`);
+    }
+  }
+  loadSkillCommands(); // Load on startup
+  
   const autocompleteProvider = new CombinedAutocompleteProvider(slashCommands, agent.jailDirectory || process.cwd());
   editor.setAutocompleteProvider(autocompleteProvider);
 
@@ -617,6 +635,80 @@ Reflect on these logs and determine if there's a skill worth creating. If the lo
         tui.requestRender();
       }
       return;
+    }
+
+    if (trimmed === "/reload-skills") {
+      try {
+        await agent.refreshContext();
+        await loadSkillCommands(); // Refresh autocomplete
+        chatView.addLog(chalk.dim("    ⎿  (skills reloaded from ~/.config/smol-agent/skills and .smol-agent/skills)"));
+      } catch (err) {
+        chatView.addLog(chalk.red(` ✗ Failed to reload skills: ${err.message}`));
+      }
+      return;
+    }
+
+    if (trimmed === "/skills") {
+      try {
+        const skills = await getSkillNames(agent.jailDirectory || process.cwd());
+        if (skills.length === 0) {
+          chatView.addLog(chalk.dim("    ⎿  No skills found."));
+          chatView.addLog(chalk.dim("        Create skills in:"));
+          chatView.addLog(chalk.dim("        - ~/.config/smol-agent/skills/<name>/SKILL.md"));
+          chatView.addLog(chalk.dim("        - .smol-agent/skills/<name>/SKILL.md"));
+        } else {
+          chatView.addLog(chalk.dim("    ⎿  Available skills:"));
+          for (const s of skills) {
+            chatView.addLog(chalk.dim(`        /${s.name} - ${s.description}`));
+          }
+        }
+      } catch (err) {
+        chatView.addLog(chalk.red(` ✗ Failed to list skills: ${err.message}`));
+      }
+      return;
+    }
+
+    // Handle skill commands: /<skill-name> loads and executes the skill
+    if (trimmed.startsWith("/") && !trimmed.startsWith("/model") && !trimmed.startsWith("/clear") && 
+        !trimmed.startsWith("/inspect") && !trimmed.startsWith("/reload-skills") && !trimmed.startsWith("/exit") &&
+        !trimmed.startsWith("/quit") && !trimmed.startsWith("/reflect") && !trimmed.startsWith("/skills")) {
+      const skillName = trimmed.slice(1).split(/\s+/)[0];
+      
+      // Check if this matches a skill
+      try {
+        const skills = await getSkillNames(agent.jailDirectory || process.cwd());
+        const skill = skills.find(s => s.name === skillName);
+        
+        if (skill) {
+          // Load the skill content
+          const { loadSkillResource } = await import("../skills.js");
+          const skillDir = agent.jailDirectory || process.cwd();
+          const skillContent = await loadSkillResource(skillDir, skillName, "SKILL.md");
+          
+          if (skillContent) {
+            chatView.addLog(chalk.dim(`    ⎿  Loading skill: ${skillName}`));
+            chatView.addLog("");
+            busy = true;
+            statusText = "thinking...";
+            tui.requestRender();
+            
+            try {
+              // Run the skill as a prompt
+              await agent.run(skillContent);
+            } catch (err) {
+              chatView.addLog(chalk.red(` ✗ Skill execution failed: ${err.message}`));
+            } finally {
+              busy = false;
+              statusText = "";
+              tui.requestRender();
+            }
+            return;
+          }
+        }
+      } catch (err) {
+        logger.debug(`Error checking skill: ${err.message}`);
+      }
+      // If not a skill, fall through to normal handling
     }
 
     if (trimmed === "/inspect") {

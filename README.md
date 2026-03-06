@@ -155,15 +155,14 @@ To run Ollama as a background service on Linux:
 ### Quick Install (recommended)
 
 ```bash
-git clone https://github.com/streed/smol-agent.git
-cd smol-agent
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/streed/smol-agent/main/install.sh | sh
 ```
 
-The installer will:
-1. Check Node.js and npm are installed
-2. Install npm dependencies
-3. Link `smol-agent` globally
+This will:
+1. Check Node.js, npm, and git are installed
+2. Clone smol-agent to `~/.smol-agent-src`
+3. Install npm dependencies
+4. Link `smol-agent` globally
 
 ### Manual Install
 
@@ -182,7 +181,19 @@ npm install -g smol-agent
 
 ## Update
 
-To update to the latest version:
+### Self-update (installed via curl | sh)
+
+If you installed via the one-liner, update to the latest version with:
+
+```bash
+smol-agent --self-update
+```
+
+This pulls the latest changes and reinstalls dependencies automatically.
+
+### Manual update (git clone)
+
+If you cloned manually:
 
 ```bash
 cd smol-agent
@@ -192,8 +203,18 @@ npm install
 
 ## Uninstall
 
+If installed via `curl | sh`:
+
 ```bash
-npm unlink
+npm unlink -g smol-agent
+rm -rf ~/.local/share/smol-agent
+rm -rf ~/.config/smol-agent
+```
+
+If installed via git clone:
+
+```bash
+npm unlink -g smol-agent
 rm -rf smol-agent
 ```
 
@@ -228,6 +249,10 @@ smol-agent "add input validation to src/api.js"
 | Command | Description |
 |---------|-------------|
 | `/clear` | Clear conversation history |
+| `/model <name>` | Switch to a different model |
+| `/model list` | List available models |
+| `/inspect` | Dump current context to CONTEXT.md |
+| `/reload-skills` | Reload skills from global and local directories |
 | `exit` / `quit` | Exit the agent |
 | `Ctrl-C` | Cancel current operation / Exit on double tap |
 
@@ -300,9 +325,14 @@ The agent can call `remember` to store facts like test commands, coding conventi
 
 After exploring a directory, the agent can call `save_context` to write a short, dense summary (key files, exports, patterns). On next startup, the system prompt lists available docs so the agent can `read_file` them instead of re-exploring from scratch.
 
-### Skills (`.smol-agent/skills/`)
+### Skills
 
-Skills are user-authored markdown files that teach the agent domain-specific workflows. Create a `.md` file with YAML frontmatter:
+Skills are user-authored markdown files that teach the agent domain-specific workflows. They can be:
+
+- **Global skills** (`~/.config/smol-agent/skills/`) — available across all projects
+- **Local skills** (`.smol-agent/skills/`) — project-specific, can override global skills by name
+
+Create a `.md` file with YAML frontmatter:
 
 ```markdown
 ---
@@ -319,7 +349,28 @@ npm run test:e2e      # end-to-end tests
 - Use the custom test-utils.js helpers (describe, test, assertEqual, etc.)
 ```
 
-On startup, the agent sees the `name` and `description` from frontmatter in its system prompt. When a skill is relevant, it reads the full file for detailed instructions.
+On startup, the agent sees the `name` and `description` from frontmatter in its system prompt (with source: "global" or "local"). When a skill is relevant, it reads the full file for detailed instructions.
+
+**Example: Set up a global git workflow skill**
+
+```bash
+mkdir -p ~/.config/smol-agent/skills
+cat > ~/.config/smol-agent/skills/git.md << 'EOF'
+---
+name: git
+description: Git workflow and commit conventions
+---
+
+## Commit message format
+- Use conventional commits: feat:, fix:, docs:, refactor:, test:
+- Keep first line under 50 chars
+- Reference issues: #123
+
+## Branch naming
+- feature/<description>
+- fix/<description>
+EOF
+```
 
 ## Architecture
 

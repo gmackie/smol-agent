@@ -3,136 +3,121 @@
  * Tests parsing of tool calls from model output
  */
 
-import { describe, test, assertEqual, assertTrue } from '../test-utils.js';
+import { describe, test, expect } from '@jest/globals';
 import { parseToolCallsFromContent } from '../../src/tool-call-parser.js';
 
-export default async function runToolCallParserTests() {
-  await describe('parseToolCallsFromContent', async () => {
-    await test('returns empty array for plain text', async () => {
-      const result = parseToolCallsFromContent('Hello, this is just a response.');
-      assertEqual(result.length, 0);
-    });
-
-    await test('parses tool_calls JSON array', async () => {
-      const content = 'Here is the result:\n```json\n{"tool_calls": [{"name": "read_file", "arguments": {"filePath": "test.js"}}]}\n```';
-      const result = parseToolCallsFromContent(content);
-      assertEqual(result.length, 1);
-      assertEqual(result[0].name, 'read_file');
-      assertEqual(result[0].arguments.filePath, 'test.js');
-    });
-
-    await test('parses tool_call (singular) format', async () => {
-      const content = '{"tool_call": {"name": "write_file", "arguments": {"filePath": "output.txt", "content": "hello"}}}';
-      const result = parseToolCallsFromContent(content);
-      assertEqual(result.length, 1);
-      assertEqual(result[0].name, 'write_file');
-      assertEqual(result[0].arguments.content, 'hello');
-    });
-
-    await test('parses function call format', async () => {
-      const content = '{"function": "grep", "parameters": {"pattern": "TODO"}}';
-      const result = parseToolCallsFromContent(content);
-      assertEqual(result.length, 1);
-      assertEqual(result[0].name, 'grep');
-      assertEqual(result[0].arguments.pattern, 'TODO');
-    });
-
-    await test('parses direct tool invocation', async () => {
-      const content = '```tool\nread_file({"filePath": "src/index.js"})\n```';
-      const result = parseToolCallsFromContent(content);
-      assertEqual(result.length, 1);
-      assertEqual(result[0].name, 'read_file');
-      assertEqual(result[0].arguments.filePath, 'src/index.js');
-    });
-
-    await test('parses tool_use blocks (Claude-style)', async () => {
-      const content = `<tool_use>
-<name>run_command</name>
-<arguments>{"command": "npm test"}</arguments>
-</tool_use>`;
-      const result = parseToolCallsFromContent(content);
-      assertEqual(result.length, 1);
-      assertEqual(result[0].name, 'run_command');
-      assertEqual(result[0].arguments.command, 'npm test');
-    });
-
-    await test('handles multiple tool calls', async () => {
-      const content = `{"tool_calls": [
-        {"name": "read_file", "arguments": {"filePath": "a.js"}},
-        {"name": "read_file", "arguments": {"filePath": "b.js"}}
-      ]}`;
-      const result = parseToolCallsFromContent(content);
-      assertEqual(result.length, 2);
-      assertEqual(result[0].arguments.filePath, 'a.js');
-      assertEqual(result[1].arguments.filePath, 'b.js');
-    });
-
-    await test('extracts JSON from code blocks', async () => {
-      const content = `I'll read that file:
-\`\`\`json
-{"name": "list_files", "arguments": {"pattern": "*.js"}}
-\`\`\`
-Let me know if you need more.`;
-      const result = parseToolCallsFromContent(content);
-      assertEqual(result.length, 1);
-      assertEqual(result[0].name, 'list_files');
-    });
-
-    await test('handles arguments as string (parses to object)', async () => {
-      const content = '{"name": "grep", "arguments": "{\\"pattern\\": \\"import\\"}"}';
-      const result = parseToolCallsFromContent(content);
-      assertEqual(result.length, 1);
-      assertEqual(result[0].arguments.pattern, 'import');
-    });
-
-    await test('returns empty array for invalid JSON', async () => {
-      const content = 'This is not JSON at all { broken';
-      const result = parseToolCallsFromContent(content);
-      assertEqual(result.length, 0);
-    });
-
-    await test('handles null input', async () => {
-      const result = parseToolCallsFromContent(null);
-      assertEqual(result.length, 0);
-    });
-
-    await test('handles undefined input', async () => {
-      const result = parseToolCallsFromContent(undefined);
-      assertEqual(result.length, 0);
-    });
-
-    await test('handles empty string', async () => {
-      const result = parseToolCallsFromContent('');
-      assertEqual(result.length, 0);
-    });
-
-    await test('parses ask_user tool call', async () => {
-      const content = '{"name": "ask_user", "arguments": {"question": "What should I do?"}}';
-      const result = parseToolCallsFromContent(content);
-      assertEqual(result.length, 1);
-      assertEqual(result[0].name, 'ask_user');
-      assertEqual(result[0].arguments.question, 'What should I do?');
-    });
-
-    await test('preserves numeric arguments', async () => {
-      const content = '{"name": "test", "arguments": {"count": 5, "ratio": 0.5}}';
-      const result = parseToolCallsFromContent(content);
-      assertEqual(result[0].arguments.count, 5);
-      assertEqual(result[0].arguments.ratio, 0.5);
-    });
-
-    await test('preserves boolean arguments', async () => {
-      const content = '{"name": "test", "arguments": {"enabled": true, "verbose": false}}';
-      const result = parseToolCallsFromContent(content);
-      assertEqual(result[0].arguments.enabled, true);
-      assertEqual(result[0].arguments.verbose, false);
-    });
-
-    await test('preserves array arguments', async () => {
-      const content = '{"name": "test", "arguments": {"files": ["a.js", "b.js", "c.js"]}}';
-      const result = parseToolCallsFromContent(content);
-      assertTrue(Array.isArray(result[0].arguments.files));
-      assertEqual(result[0].arguments.files.length, 3);
-    });
+describe('parseToolCallsFromContent', () => {
+  test('returns empty array for plain text', () => {
+    const result = parseToolCallsFromContent('Hello, this is just a response.');
+    expect(result.length).toBe(0);
   });
-}
+
+  test('parses name/arguments format in code block', () => {
+    const content = 'I will use the tool:\n```json\n{"name": "write_file", "arguments": {"filePath": "output.txt", "content": "hello"}}\n```';
+    const result = parseToolCallsFromContent(content);
+    expect(result.length).toBe(1);
+    expect(result[0].function.name).toBe('write_file');
+    expect(result[0].function.arguments.content).toBe('hello');
+  });
+
+  test('parses direct tool invocation', () => {
+    const content = 'read_file({"filePath": "src/index.js"})';
+    const result = parseToolCallsFromContent(content);
+    expect(result.length).toBe(1);
+    expect(result[0].function.name).toBe('read_file');
+    expect(result[0].function.arguments.filePath).toBe('src/index.js');
+  });
+
+  test('handles multiple tool calls in array', () => {
+    const content = '{"tool_calls": [{"name": "read_file", "arguments": {"filePath": "a.js"}}, {"name": "read_file", "arguments": {"filePath": "b.js"}}]}';
+    const result = parseToolCallsFromContent(content);
+    expect(result.length).toBe(2);
+    expect(result[0].function.arguments.filePath).toBe('a.js');
+    expect(result[1].function.arguments.filePath).toBe('b.js');
+  });
+
+  test('extracts JSON from code blocks', () => {
+    const content = 'I will read that file:\n```json\n{"name": "list_files", "arguments": {"pattern": "*.js"}}\n```\nLet me know if you need more.';
+    const result = parseToolCallsFromContent(content);
+    expect(result.length).toBe(1);
+    expect(result[0].function.name).toBe('list_files');
+  });
+
+  test('returns empty array for invalid JSON', () => {
+    const content = 'This is not JSON at all { broken';
+    const result = parseToolCallsFromContent(content);
+    expect(result.length).toBe(0);
+  });
+
+  test('handles null input', () => {
+    const result = parseToolCallsFromContent(null);
+    expect(result.length).toBe(0);
+  });
+
+  test('handles undefined input', () => {
+    const result = parseToolCallsFromContent(undefined);
+    expect(result.length).toBe(0);
+  });
+
+  test('handles empty string', () => {
+    const result = parseToolCallsFromContent('');
+    expect(result.length).toBe(0);
+  });
+
+  test('parses ask_user tool call', () => {
+    const content = '{"name": "ask_user", "arguments": {"question": "What should I do?"}}';
+    const result = parseToolCallsFromContent(content);
+    expect(result.length).toBe(1);
+    expect(result[0].function.name).toBe('ask_user');
+    expect(result[0].function.arguments.question).toBe('What should I do?');
+  });
+
+  test('parses function wrapper format', () => {
+    const content = '{"function": {"name": "read_file", "arguments": {"filePath": "test.js"}}}';
+    const result = parseToolCallsFromContent(content);
+    expect(result.length).toBe(1);
+    expect(result[0].function.name).toBe('read_file');
+    expect(result[0].function.arguments.filePath).toBe('test.js');
+  });
+
+  test('parses array of tool calls', () => {
+    const content = '[{"name": "read_file", "arguments": {"filePath": "a.js"}}, {"name": "write_file", "arguments": {"filePath": "b.js", "content": "test"}}]';
+    const result = parseToolCallsFromContent(content);
+    expect(result.length).toBe(2);
+    expect(result[0].function.name).toBe('read_file');
+    expect(result[1].function.name).toBe('write_file');
+  });
+
+  test('deduplicates identical calls', () => {
+    const content = '{"name": "read_file", "arguments": {"filePath": "test.js"}}\n{"name": "read_file", "arguments": {"filePath": "test.js"}}';
+    const result = parseToolCallsFromContent(content);
+    expect(result.length).toBe(1);
+  });
+
+  test('marks calls as text parsed', () => {
+    const content = '{"name": "read_file", "arguments": {"filePath": "test.js"}}';
+    const result = parseToolCallsFromContent(content);
+    expect(result[0]._textParsed).toBe(true);
+  });
+
+  test('can disable textParsed marking', () => {
+    const content = '{"name": "read_file", "arguments": {"filePath": "test.js"}}';
+    const result = parseToolCallsFromContent(content, { markAsTextParsed: false });
+    expect(result[0]._textParsed).toBeUndefined();
+  });
+
+  test('parses multiple function calls in text', () => {
+    const content = 'I will run these commands:\nrun_command({"command": "npm test"})\nrun_command({"command": "npm run lint"})';
+    const result = parseToolCallsFromContent(content);
+    expect(result.length).toBe(2);
+    expect(result[0].function.arguments.command).toBe('npm test');
+    expect(result[1].function.arguments.command).toBe('npm run lint');
+  });
+
+  test('extracts fenced code without json label', () => {
+    const content = '```\n{"name": "grep", "arguments": {"pattern": "import"}}\n```';
+    const result = parseToolCallsFromContent(content);
+    expect(result.length).toBe(1);
+    expect(result[0].function.name).toBe('grep');
+  });
+});

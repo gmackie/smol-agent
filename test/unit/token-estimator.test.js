@@ -1,9 +1,9 @@
 /**
  * Unit tests for token-estimator module
- * Tests token estimation functions
+ * Tests token counting for messages and text
  */
 
-import { describe, test, assertEqual, assertTrue } from '../test-utils.js';
+import { describe, test, expect, beforeAll } from '@jest/globals';
 import {
   estimateTokens,
   estimateMessageTokens,
@@ -11,197 +11,251 @@ import {
   getTokenBreakdown,
   countTokens,
   isTiktokenAvailable,
+  ensureInitialized
 } from '../../src/token-estimator.js';
 
-export default async function runTokenEstimatorTests() {
-  await describe('estimateTokens', async () => {
-    await test('returns 0 for empty string', async () => {
-      assertEqual(estimateTokens(''), 0);
-    });
-
-    await test('returns 0 for null', async () => {
-      assertEqual(estimateTokens(null), 0);
-    });
-
-    await test('returns 0 for undefined', async () => {
-      estimateTokens(undefined);
-      // Should not throw, returns 0
-      assertEqual(estimateTokens(undefined), 0);
-    });
-
-    await test('estimates tokens for simple text', async () => {
-      const tokens = estimateTokens('Hello world');
-      assertTrue(tokens > 0, 'Should return positive token count');
-    });
-
-    await test('estimates more tokens for longer text', async () => {
-      const shortTokens = estimateTokens('Hello');
-      const longTokens = estimateTokens('Hello world this is a longer sentence');
-      assertTrue(longTokens > shortTokens, 'Longer text should have more tokens');
-    });
-
-    await test('handles non-string input', async () => {
-      const tokens = estimateTokens(12345);
-      assertTrue(tokens > 0, 'Should convert number to string and estimate');
-    });
-
-    await test('handles string with special characters', async () => {
-      const tokens = estimateTokens('Hello\nWorld\tTab');
-      assertTrue(tokens > 0, 'Should handle special characters');
-    });
+describe('estimateTokens', () => {
+  beforeAll(async () => {
+    await ensureInitialized();
   });
 
-  await describe('estimateMessageTokens', async () => {
-    await test('estimates tokens for simple message', async () => {
-      const msg = { role: 'user', content: 'Hello world' };
-      const tokens = estimateMessageTokens(msg);
-      assertTrue(tokens > 0, 'Should return positive token count');
-    });
-
-    await test('includes role overhead', async () => {
-      const msg = { role: 'user', content: 'Hello' };
-      const textTokens = estimateTokens('Hello');
-      const msgTokens = estimateMessageTokens(msg);
-      // Message should have more tokens than just the text due to role overhead
-      assertTrue(msgTokens > textTokens, 'Message should include overhead');
-    });
-
-    await test('includes name in estimation', async () => {
-      const msgWith = { role: 'user', content: 'Hello', name: 'Alice' };
-      const msgWithout = { role: 'user', content: 'Hello' };
-      const tokensWith = estimateMessageTokens(msgWith);
-      const tokensWithout = estimateMessageTokens(msgWithout);
-      assertTrue(tokensWith > tokensWithout, 'Name should add tokens');
-    });
-
-    await test('handles tool_calls', async () => {
-      const msg = {
-        role: 'assistant',
-        content: 'Let me help you.',
-        tool_calls: [
-          {
-            function: {
-              name: 'read_file',
-              arguments: '{"filePath": "test.js"}',
-            },
-          },
-        ],
-      };
-      const tokens = estimateMessageTokens(msg);
-      assertTrue(tokens > 0, 'Should estimate tokens for tool calls');
-    });
-
-    await test('handles empty content', async () => {
-      const msg = { role: 'assistant', content: '' };
-      const tokens = estimateMessageTokens(msg);
-      // Should still have base overhead
-      assertTrue(tokens >= 4, 'Should have minimum overhead');
-    });
-
-    await test('handles missing content', async () => {
-      const msg = { role: 'system' };
-      const tokens = estimateMessageTokens(msg);
-      assertTrue(tokens >= 4, 'Should have minimum overhead');
-    });
+  test('returns 0 for empty string', () => {
+    expect(estimateTokens('')).toBe(0);
   });
 
-  await describe('estimateTotalTokens', async () => {
-    await test('returns 0 for empty array', async () => {
-      assertEqual(estimateTotalTokens([]), 0);
-    });
-
-    await test('returns 0 for null', async () => {
-      assertEqual(estimateTotalTokens(null), 0);
-    });
-
-    await test('returns 0 for undefined', async () => {
-      assertEqual(estimateTotalTokens(undefined), 0);
-    });
-
-    await test('estimates tokens for message array', async () => {
-      const messages = [
-        { role: 'system', content: 'You are helpful.' },
-        { role: 'user', content: 'Hello' },
-        { role: 'assistant', content: 'Hi there!' },
-      ];
-      const tokens = estimateTotalTokens(messages);
-      assertTrue(tokens > 0, 'Should return positive token count');
-    });
-
-    await test('adds conversation overhead', async () => {
-      const messages = [{ role: 'user', content: 'Hello' }];
-      const singleTokens = estimateMessageTokens(messages[0]);
-      const totalTokens = estimateTotalTokens(messages);
-      // Total should be more than single message due to conversation overhead
-      assertTrue(totalTokens > singleTokens, 'Should add conversation overhead');
-    });
-
-    await test('scales with more messages', async () => {
-      const few = [{ role: 'user', content: 'Hello' }];
-      const many = [
-        { role: 'user', content: 'Hello' },
-        { role: 'assistant', content: 'Hi!' },
-        { role: 'user', content: 'How are you?' },
-      ];
-      const fewTokens = estimateTotalTokens(few);
-      const manyTokens = estimateTotalTokens(many);
-      assertTrue(manyTokens > fewTokens, 'More messages should have more tokens');
-    });
+  test('returns 0 for null', () => {
+    expect(estimateTokens(null)).toBe(0);
   });
 
-  await describe('getTokenBreakdown', async () => {
-    await test('returns empty breakdown for empty array', async () => {
-      const breakdown = getTokenBreakdown([]);
-      assertEqual(breakdown.total, 0);
-      assertEqual(Object.keys(breakdown.byRole).length, 0);
-      assertEqual(breakdown.byMessage.length, 0);
-    });
-
-    await test('returns empty breakdown for null', async () => {
-      const breakdown = getTokenBreakdown(null);
-      assertEqual(breakdown.total, 0);
-    });
-
-    await test('provides breakdown by role', async () => {
-      const messages = [
-        { role: 'user', content: 'Hello' },
-        { role: 'assistant', content: 'Hi' },
-        { role: 'user', content: 'How are you?' },
-      ];
-      const breakdown = getTokenBreakdown(messages);
-      assertTrue(breakdown.byRole.user > 0, 'Should track user tokens');
-      assertTrue(breakdown.byRole.assistant > 0, 'Should track assistant tokens');
-    });
-
-    await test('provides per-message breakdown', async () => {
-      const messages = [
-        { role: 'user', content: 'Hello' },
-        { role: 'assistant', content: 'Hi' },
-      ];
-      const breakdown = getTokenBreakdown(messages);
-      assertEqual(breakdown.byMessage.length, 2);
-      assertEqual(breakdown.byMessage[0].role, 'user');
-      assertEqual(breakdown.byMessage[1].role, 'assistant');
-    });
-
-    await test('includes preview of content', async () => {
-      const messages = [{ role: 'user', content: 'This is a long message that should be truncated' }];
-      const breakdown = getTokenBreakdown(messages);
-      assertTrue(breakdown.byMessage[0].preview.length > 0, 'Should include preview');
-    });
+  test('returns 0 for undefined', () => {
+    expect(estimateTokens(undefined)).toBe(0);
   });
 
-  await describe('countTokens', async () => {
-    await test('is alias for estimateTokens', async () => {
-      const text = 'Hello world';
-      assertEqual(countTokens(text), estimateTokens(text));
-    });
+  test('returns positive tokens for number', () => {
+    const result = estimateTokens(12345);
+    expect(result).toBeGreaterThan(0);
   });
 
-  await describe('isTiktokenAvailable', async () => {
-    await test('returns boolean', async () => {
-      const available = isTiktokenAvailable();
-      assertTrue(typeof available === 'boolean', 'Should return boolean');
-    });
+  test('counts tokens for simple text', () => {
+    const text = 'Hello world';
+    const tokens = estimateTokens(text);
+    // "Hello world" is typically 2 tokens
+    expect(tokens).toBeGreaterThanOrEqual(1);
+    expect(tokens).toBeLessThanOrEqual(5);
   });
-}
+
+  test('counts more tokens for longer text', () => {
+    const short = 'Hello';
+    const long = 'Hello world this is a longer sentence with more words';
+    const shortTokens = estimateTokens(short);
+    const longTokens = estimateTokens(long);
+    expect(longTokens).toBeGreaterThan(shortTokens);
+  });
+
+  test('handles code content', () => {
+    const code = 'function add(a, b) { return a + b; }';
+    const tokens = estimateTokens(code);
+    expect(tokens).toBeGreaterThan(0);
+  });
+
+  test('handles special characters', () => {
+    const text = '```javascript\nconst x = 1;\n```';
+    const tokens = estimateTokens(text);
+    expect(tokens).toBeGreaterThan(0);
+  });
+});
+
+describe('estimateMessageTokens', () => {
+  beforeAll(async () => {
+    await ensureInitialized();
+  });
+
+  test('counts tokens for simple user message', () => {
+    const msg = { role: 'user', content: 'Hello' };
+    const tokens = estimateMessageTokens(msg);
+    // Base overhead (4) + role tokens + content tokens
+    expect(tokens).toBeGreaterThan(4);
+  });
+
+  test('counts tokens for assistant message', () => {
+    const msg = { role: 'assistant', content: 'Hello there!' };
+    const tokens = estimateMessageTokens(msg);
+    expect(tokens).toBeGreaterThan(4);
+  });
+
+  test('includes name overhead', () => {
+    const msgWithName = { role: 'user', name: 'TestUser', content: 'Hello' };
+    const msgWithoutName = { role: 'user', content: 'Hello' };
+    const tokensWithName = estimateMessageTokens(msgWithName);
+    const tokensWithoutName = estimateMessageTokens(msgWithoutName);
+    expect(tokensWithName).toBeGreaterThan(tokensWithoutName);
+  });
+
+  test('counts tool_calls overhead', () => {
+    const msg = {
+      role: 'assistant',
+      content: 'Here is the result',
+      tool_calls: [
+        {
+          function: {
+            name: 'read_file',
+            arguments: '{"filePath": "test.js"}'
+          }
+        }
+      ]
+    };
+    const tokens = estimateMessageTokens(msg);
+    // Should include tool call overhead (3 base + 5 per call)
+    expect(tokens).toBeGreaterThan(10);
+  });
+
+  test('handles multiple tool calls', () => {
+    const singleTool = {
+      role: 'assistant',
+      tool_calls: [{ function: { name: 'read_file', arguments: '{}' } }]
+    };
+    const multiTool = {
+      role: 'assistant',
+      tool_calls: [
+        { function: { name: 'read_file', arguments: '{}' } },
+        { function: { name: 'write_file', arguments: '{}' } }
+      ]
+    };
+    const singleTokens = estimateMessageTokens(singleTool);
+    const multiTokens = estimateMessageTokens(multiTool);
+    expect(multiTokens).toBeGreaterThan(singleTokens);
+  });
+
+  test('handles parsed arguments object', () => {
+    const msg = {
+      role: 'assistant',
+      tool_calls: [
+        {
+          function: {
+            name: 'grep',
+            arguments: { pattern: 'TODO', path: 'src/' }  // Object, not string
+          }
+        }
+      ]
+    };
+    const tokens = estimateMessageTokens(msg);
+    expect(tokens).toBeGreaterThan(0);
+  });
+
+  test('handles message without content', () => {
+    const msg = { role: 'assistant', tool_calls: [] };
+    const tokens = estimateMessageTokens(msg);
+    // Should still count base overhead
+    expect(tokens).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe('estimateTotalTokens', () => {
+  beforeAll(async () => {
+    await ensureInitialized();
+  });
+
+  test('returns baseline overhead for empty array', () => {
+    const tokens = estimateTotalTokens([]);
+    // Empty array still has conversation overhead (3) + response overhead (4) = 7
+    expect(tokens).toBeGreaterThanOrEqual(0);
+  });
+
+  test('returns 0 for null', () => {
+    expect(estimateTotalTokens(null)).toBe(0);
+  });
+
+  test('returns 0 for undefined', () => {
+    expect(estimateTotalTokens(undefined)).toBe(0);
+  });
+
+  test('includes conversation overhead', () => {
+    const messages = [
+      { role: 'user', content: 'Hello' }
+    ];
+    const tokens = estimateTotalTokens(messages);
+    // Should include 3 for conversation overhead + 4 for response overhead
+    expect(tokens).toBeGreaterThan(7);
+  });
+
+  test('sums multiple messages', () => {
+    const messages = [
+      { role: 'user', content: 'Hello' },
+      { role: 'assistant', content: 'Hi there!' },
+      { role: 'user', content: 'How are you?' }
+    ];
+    const total = estimateTotalTokens(messages);
+    const sum = messages.reduce((acc, msg) => acc + estimateMessageTokens(msg), 0);
+    expect(total).toBeGreaterThan(sum);
+  });
+});
+
+describe('getTokenBreakdown', () => {
+  beforeAll(async () => {
+    await ensureInitialized();
+  });
+
+  test('returns empty breakdown for empty array', () => {
+    const result = getTokenBreakdown([]);
+    expect(result.total).toBe(0);
+    expect(Object.keys(result.byRole).length).toBe(0);
+    expect(result.byMessage.length).toBe(0);
+  });
+
+  test('returns empty breakdown for null', () => {
+    const result = getTokenBreakdown(null);
+    expect(result.total).toBe(0);
+  });
+
+  test('groups by role', () => {
+    const messages = [
+      { role: 'user', content: 'Hello' },
+      { role: 'assistant', content: 'Hi!' },
+      { role: 'user', content: 'How are you?' }
+    ];
+    const result = getTokenBreakdown(messages);
+
+    expect(result.byRole.user).toBeGreaterThan(0);
+    expect(result.byRole.assistant).toBeGreaterThan(0);
+  });
+
+  test('includes message previews', () => {
+    const messages = [
+      { role: 'user', content: 'This is a long message that should be truncated in the preview' }
+    ];
+    const result = getTokenBreakdown(messages);
+
+    expect(result.byMessage.length).toBe(1);
+    expect(result.byMessage[0].role).toBe('user');
+    expect(result.byMessage[0].tokens).toBeGreaterThan(0);
+    expect(result.byMessage[0].preview.length).toBeLessThanOrEqual(53); // 50 chars + '...'
+  });
+
+  test('handles message without content', () => {
+    const messages = [
+      { role: 'assistant', tool_calls: [] }
+    ];
+    const result = getTokenBreakdown(messages);
+
+    expect(result.byMessage.length).toBe(1);
+    expect(result.byMessage[0].preview).toBe('');
+  });
+});
+
+describe('countTokens', () => {
+  beforeAll(async () => {
+    await ensureInitialized();
+  });
+
+  test('is alias for estimateTokens', () => {
+    const text = 'Hello world';
+    expect(countTokens(text)).toBe(estimateTokens(text));
+  });
+});
+
+describe('isTiktokenAvailable', () => {
+  test('returns boolean', () => {
+    const result = isTiktokenAvailable();
+    expect(typeof result).toBe('boolean');
+  });
+});

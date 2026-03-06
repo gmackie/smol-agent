@@ -110,7 +110,7 @@ ${summary}`;
 /**
  * Create a simple summary without LLM (faster, less context-aware).
  */
-function createSimpleSummary(messages) {
+export function createSimpleSummary(messages) {
   const topics = [];
   const files = new Set();
   const tools = new Set();
