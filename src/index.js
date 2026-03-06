@@ -104,7 +104,7 @@ if (acpMode) {
   });
 } else {
   // ── TUI mode ────────────────────────────────────────────────────────
-  const agent = new Agent({ host, model, contextSize, jailDirectory, coreToolsOnly });
+  const agent = new Agent({ host, model, jailDirectory, coreToolsOnly });
 
   // Load persisted settings, CLI flags override
   const settings = await loadSettings(jailDirectory);

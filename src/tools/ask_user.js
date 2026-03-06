@@ -38,7 +38,7 @@ register("ask_user", {
     if (!_askHandler) {
       return { answer: "(no UI handler registered — cannot ask user)" };
     }
-    const answer = await _askHandler(question);
+    const answer = (await _askHandler(question)) || "";
     return { answer: answer.trim() };
   },
 });

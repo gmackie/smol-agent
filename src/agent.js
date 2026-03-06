@@ -45,7 +45,7 @@ function parseThinkingContent(content) {
 
   return {
     thinking: thinkingBlocks.length > 0 ? thinkingBlocks.join("\n") : null,
-    cleaned: cleaned || content,
+    cleaned: thinkingBlocks.length > 0 ? cleaned : content,
   };
 }
 
@@ -177,8 +177,17 @@ function looksLikeUnexecutedIntent(text) {
     "grep", "run_command",
   ];
 
+  // Exclusion phrases — model is reporting results, not narrating intent
+  const exclusionPhrases = [
+    "couldn't", "didn't", "not found", "no matching",
+    "unable to", "failed to", "already ", "no results",
+  ];
+
   const hasIntent = intentPhrases.some((p) => lower.includes(p));
   const mentionsTool = toolMentions.some((t) => lower.includes(t));
+  const hasExclusion = exclusionPhrases.some((p) => lower.includes(p));
+
+  if (hasExclusion) return false;
 
   // If the response both sounds intentional AND mentions a tool name, it's
   // almost certainly a case where the model described instead of acted.
@@ -224,12 +233,12 @@ export function detectToolLoop(recentSignatures, loopNudges) {
 // ── Agent ────────────────────────────────────────────────────────────
 
 export class Agent extends EventEmitter {
-  constructor({ host, model, contextSize, jailDirectory, coreToolsOnly } = {}) {
+  constructor({ host, model, contextSize, maxTokens, jailDirectory, coreToolsOnly } = {}) {
     super();
     this.client = ollama.createClient(host);
     this.model = model || ollama.DEFAULT_MODEL;
-    this.contextSize = contextSize;
-    this.maxTokens = contextSize || 128000;
+    this.contextSize = contextSize; // AGENT.md line limit only
+    this.maxTokens = maxTokens || 128000;
     this.jailDirectory = jailDirectory || process.cwd();
     this.messages = [];
     this.running = false;
@@ -428,6 +437,7 @@ export class Agent extends EventEmitter {
     this._recentToolCalls = [];
     this._loopNudges = 0;
     this._shiftLeft.reset();
+    this._pendingInjections = [];
     this.messages.push({ role: "user", content: userMessage });
 
     // ── Pre-hydration (Stripe Minions pattern) ──
@@ -599,8 +609,9 @@ export class Agent extends EventEmitter {
           throw new Error("Stream failed after all retry attempts");
         }
 
-        // Reset consecutive agent retries on successful stream
+        // Reset consecutive retries on successful stream
         consecutiveAgentRetries = 0;
+        overflowRetries = 0;
 
         // Guard: if the stream timeout fired but the stream completed anyway
         // (race condition), reset the abort controller so tool execution isn't blocked.
@@ -621,6 +632,11 @@ export class Agent extends EventEmitter {
         // Fallback: parse tool calls from content text
         if (toolCalls.length === 0) {
           toolCalls = parseToolCallsFromContent(fullContent);
+          // Filter out tool calls not in the allowed tool set
+          if (toolCalls.length > 0) {
+            const allowedNames = new Set(tools.map(t => t.function.name));
+            toolCalls = toolCalls.filter(tc => allowedNames.has(tc.function.name));
+          }
         }
 
         // Build assistant message — use cleaned content (thinking stripped) to save context
@@ -714,7 +730,7 @@ export class Agent extends EventEmitter {
           const name = tc.function.name;
           const args = tc.function.arguments;
 
-          if (this.abortController.signal.aborted) {
+          if (this.abortController?.signal?.aborted) {
             return { error: "Operation cancelled" };
           }
 
@@ -759,7 +775,13 @@ export class Agent extends EventEmitter {
 
             // Request approval for dangerous tools
             if (registry.requiresApproval(name) && !this._approveAll && this._approvalHandler) {
-              const decision = await this._approvalHandler(name, args);
+              let decision;
+              try {
+                decision = await this._approvalHandler(name, args);
+              } catch (approvalErr) {
+                logger.warn(`Approval handler threw: ${approvalErr.message}`);
+                decision = { approved: false };
+              }
               if (decision.approveAll) {
                 this._approveAll = true;
               }
@@ -974,10 +996,8 @@ export class Agent extends EventEmitter {
     } catch { /* no plan */ }
 
     const systemContent = contextBlock
-      + toolSchemaBlock
-      + extendedNote
-      + planBlock
-      + SYSTEM_PROMPT;
+      ? `${SYSTEM_PROMPT}${toolSchemaBlock}${extendedNote}${planBlock}\n\n# Project context\n\n${contextBlock}`
+      : `${SYSTEM_PROMPT}${toolSchemaBlock}${extendedNote}${planBlock}`;
 
     this.messages[systemIndex].content = systemContent;
     logger.info("Context refreshed (skills, plans, tools updated)");

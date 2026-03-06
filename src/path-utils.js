@@ -48,7 +48,7 @@ export function resolveJailedPath(basePath, targetPath) {
     throw new Error(`Path '${targetPath}' escapes the jail directory`);
   }
 
-  return resolvedPath;
+  return realTarget;
 }
 
 /**

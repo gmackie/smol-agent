@@ -487,13 +487,20 @@ export function startApp(agent, initialPrompt) {
   // ── ChatView ──
   const chatView = new ChatView(tui, editor, statusArea, footerBar);
 
+  let gitStatsCache = { result: null, timestamp: 0 };
+  const GIT_STATS_TTL = 10_000; // 10 seconds
+
   function updateContextBar() {
-    // Refresh git stats when updating context bar
-    try {
-      gitStats = getGitStats(agent.jailDirectory || process.cwd());
-    } catch {
-      gitStats = null;
+    // Refresh git stats when updating context bar (cached with TTL)
+    const now = Date.now();
+    if (now - gitStatsCache.timestamp > GIT_STATS_TTL) {
+      try {
+        gitStatsCache = { result: getGitStats(agent.jailDirectory || process.cwd()), timestamp: now };
+      } catch {
+        gitStatsCache = { result: null, timestamp: now };
+      }
     }
+    gitStats = gitStatsCache.result;
     footerBar.invalidate();
     tui.requestRender();
   }
@@ -566,10 +573,10 @@ Reflect on these logs and determine if there's a skill worth creating. If the lo
       chatView.addLog("");
       busy = true;
       statusText = "reflecting...";
-      updateStatus();
+      tui.requestRender();
 
       try {
-        const response = await agent.run(reflectPrompt);
+        await agent.run(reflectPrompt);
         // Refresh context to pick up any newly created skills
         await agent.refreshContext();
         chatView.addLog(chalk.dim("    ⎿  (skills context refreshed)"));
@@ -578,7 +585,7 @@ Reflect on these logs and determine if there's a skill worth creating. If the lo
       } finally {
         busy = false;
         statusText = "";
-        updateStatus();
+        tui.requestRender();
       }
       return;
     }

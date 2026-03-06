@@ -5,7 +5,7 @@ const MAX_BUFFER = 100 * 1024;
 const TIMEOUT_MS = 30_000;
 
 const BLOCKED_COMMANDS = new Set(["push"]);
-const BLOCKED_FLAGS = new Set(["--force", "-f", "--force-with-lease", "-D"]);
+const BLOCKED_FLAGS = new Set(["--force", "-f", "--force-with-lease", "-D", "--delete"]);
 
 const DESTRUCTIVE_SUBCOMMANDS = {
   reset: (args) => {
@@ -14,6 +14,25 @@ const DESTRUCTIVE_SUBCOMMANDS = {
       const remaining = args.slice(idx + 1);
       if (remaining.length === 0 || remaining[0] === "HEAD") return null;
       return "reset --hard/--keep to non-HEAD commit";
+    }
+    return null;
+  },
+  checkout: (args) => {
+    // Block "checkout -- ." and "checkout -- *" (discards all working tree changes)
+    const dashDashIdx = args.indexOf("--");
+    if (dashDashIdx !== -1) {
+      const after = args.slice(dashDashIdx + 1);
+      if (after.includes(".") || after.includes("*")) {
+        return "checkout -- . / * discards all working tree changes";
+      }
+    }
+    return null;
+  },
+  clean: () => "git clean can permanently delete untracked files",
+  stash: (args) => {
+    const subarg = args[1];
+    if (subarg === "drop" || subarg === "clear") {
+      return `stash ${subarg} permanently deletes stashed changes`;
     }
     return null;
   },

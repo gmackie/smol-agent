@@ -46,8 +46,8 @@ let last429Time = 0;
 
 function getRateLimiter() {
   if (!rateLimiter) {
-    const rpm = parseInt(process.env.OLLAMA_RATE_LIMIT_PER_MINUTE) || DEFAULT_RATE_LIMIT.requestsPerMinute;
-    const rps = parseInt(process.env.OLLAMA_RATE_LIMIT_PER_SECOND) || DEFAULT_RATE_LIMIT.requestsPerSecond;
+    const rpm = Math.max(1, parseInt(process.env.OLLAMA_RATE_LIMIT_PER_MINUTE) || DEFAULT_RATE_LIMIT.requestsPerMinute);
+    const rps = Math.max(1, parseInt(process.env.OLLAMA_RATE_LIMIT_PER_SECOND) || DEFAULT_RATE_LIMIT.requestsPerSecond);
     rateLimiter = {
       secondBucket: new TokenBucket(rps * 2, rps),
       minuteBucket: new TokenBucket(rpm, rpm / 60),
@@ -65,11 +65,17 @@ async function waitForRateLimit() {
     await new Promise((r) => setTimeout(r, wait));
   }
 
-  let wait = await buckets.secondBucket.acquire(1);
-  if (wait !== true) await new Promise((r) => setTimeout(r, wait));
+  while (true) {
+    const wait = await buckets.secondBucket.acquire(1);
+    if (wait === true) break;
+    await new Promise((r) => setTimeout(r, wait));
+  }
 
-  wait = await buckets.minuteBucket.acquire(1);
-  if (wait !== true) await new Promise((r) => setTimeout(r, wait));
+  while (true) {
+    const wait = await buckets.minuteBucket.acquire(1);
+    if (wait === true) break;
+    await new Promise((r) => setTimeout(r, wait));
+  }
 }
 
 function rateLimitBackoff(attempt) {
@@ -91,6 +97,7 @@ export function estimateTokenCount(messages) {
   let chars = 0;
   for (const m of messages) {
     if (m.content) chars += m.content.length;
+    if (m.tool_calls) chars += JSON.stringify(m.tool_calls).length;
   }
   return Math.ceil(chars / 4);
 }

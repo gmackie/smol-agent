@@ -39,6 +39,9 @@ export function isContextOverflowError(err) {
 export function classifyError(err) {
   if (!err) return 'logic_error';
 
+  // AbortError — explicit cancellation, not retryable
+  if (err.name === 'AbortError') return 'abort';
+
   if (isContextOverflowError(err)) return 'context_overflow';
 
   // Network / rate-limit — safe to retry
@@ -48,11 +51,14 @@ export function classifyError(err) {
     err.code === 'ECONNRESET' ||
     err.code === 'ENOTFOUND' ||
     err.code === 'EAI_AGAIN' ||
+    err.code === 'EPIPE' ||
+    err.code === 'ECONNABORTED' ||
     err.status === 429 ||
     (err.status >= 500 && err.status < 600) ||
     err.message?.includes('timeout') ||
     err.message?.includes('deadline') ||
-    err.message?.includes('rate limit')
+    err.message?.includes('rate limit') ||
+    err.message?.includes('slot unavailable')
   ) {
     return 'transient';
   }

@@ -9,6 +9,7 @@
 export function parseToolCallsFromContent(content) {
   if (!content) return [];
 
+  const MAX_PARSED_CALLS = 20;
   const calls = [];
   const candidates = [];
 
@@ -17,23 +18,27 @@ export function parseToolCallsFromContent(content) {
   let match;
   while ((match = jsonBlockRe.exec(content)) !== null) {
     candidates.push(match[1].trim());
+    if (candidates.length >= MAX_PARSED_CALLS) break;
   }
 
   // 2. <tool_call> ... </tool_call> tags (used by some Qwen/Mistral models)
   const toolCallTagRe = /<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/g;
   while ((match = toolCallTagRe.exec(content)) !== null) {
     candidates.push(match[1].trim());
+    if (candidates.length >= MAX_PARSED_CALLS) break;
   }
 
   // 3. Bare JSON objects with "name" and "arguments" keys
   const bareJsonRe = /\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:\s*\{[\s\S]*?\}\s*\}/g;
   while ((match = bareJsonRe.exec(content)) !== null) {
     candidates.push(match[0].trim());
+    if (candidates.length >= MAX_PARSED_CALLS) break;
   }
 
   // 4. Function-call style:  function_name({"key": "value"})
   const funcCallRe = /([a-z_][a-z0-9_]*)\((\{[\s\S]*?\})\)/gi;
   while ((match = funcCallRe.exec(content)) !== null) {
+    if (calls.length >= MAX_PARSED_CALLS) break;
     const name = match[1];
     const argsStr = match[2].trim();
     try {

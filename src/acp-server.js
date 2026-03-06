@@ -2,10 +2,10 @@ import * as acp from "@agentclientprotocol/sdk";
 import { Readable, Writable } from "node:stream";
 import crypto from "node:crypto";
 import { Agent } from "./agent.js";
-import { setAskHandler } from "./tools/ask_user.js";
+import { setAskHandler, getAskHandler } from "./tools/ask_user.js";
 import { loadSettings } from "./settings.js";
 import { logger } from "./logger.js";
-import "./tools/registry.js";
+import { requiresApproval } from "./tools/registry.js";
 
 // ── Tool kind mapping ───────────────────────────────────────────────
 
@@ -34,12 +34,29 @@ function toolKind(name) {
   return TOOL_KIND_MAP[name] || "other";
 }
 
+// ── Helpers ──────────────────────────────────────────────────────────
+
+/** Wrap sessionUpdate calls so a dropped connection doesn't produce unhandled rejections. */
+function safeSessionUpdate(conn, params) {
+  try {
+    const result = conn.sessionUpdate(params);
+    if (result && typeof result.catch === 'function') {
+      result.catch((err) => logger.warn(`sessionUpdate failed: ${err.message}`));
+    }
+  } catch (err) {
+    logger.warn(`sessionUpdate threw: ${err.message}`);
+  }
+}
+
+// Session TTL — 30 minutes of inactivity
+const SESSION_TTL_MS = 30 * 60 * 1000;
+
 // ── ACP Agent implementation ────────────────────────────────────────
 
 class SmolACPAgent {
   constructor(connection) {
     this.connection = connection;
-    this.sessions = new Map(); // sessionId → { agent, callCounter }
+    this.sessions = new Map(); // sessionId → { agent, callCounter, lastActivity }
   }
 
   async initialize(params) {
@@ -64,7 +81,6 @@ class SmolACPAgent {
     const agent = new Agent({
       host: this._host,
       model: this._model,
-      contextSize: this._contextSize,
       jailDirectory: cwd,
       coreToolsOnly: this._coreToolsOnly,
     });
@@ -75,7 +91,12 @@ class SmolACPAgent {
       agent._approveAll = true;
     }
 
-    this.sessions.set(sessionId, { agent, callCounter: 0 });
+    // Warn if multiple concurrent sessions (global singletons may cause interference)
+    if (this.sessions.size > 0) {
+      logger.warn(`[ACP] Multiple concurrent sessions detected (${this.sessions.size + 1}). Global singletons (jailDirectory, search/fetch clients) may cause cross-session interference.`);
+    }
+
+    this.sessions.set(sessionId, { agent, callCounter: 0, lastActivity: Date.now() });
     logger.info(`[ACP] session/new — id: ${sessionId}, cwd: ${cwd}, model: ${this._model || "default"}, autoApprove: ${agent._approveAll}`);
     return { sessionId };
   }
@@ -86,11 +107,23 @@ class SmolACPAgent {
 
   async prompt(params) {
     const { sessionId, prompt: contentBlocks } = params;
+
+    // Sweep stale sessions
+    const now = Date.now();
+    for (const [id, s] of this.sessions) {
+      if (id !== sessionId && now - s.lastActivity > SESSION_TTL_MS) {
+        logger.info(`[ACP] Sweeping stale session ${id.slice(0, 8)}… (inactive ${Math.round((now - s.lastActivity) / 1000)}s)`);
+        s.agent.reset();
+        this.sessions.delete(id);
+      }
+    }
+
     const session = this.sessions.get(sessionId);
     if (!session) {
       throw new acp.RequestError(-32602, `Unknown session: ${sessionId}`);
     }
 
+    session.lastActivity = now;
     const { agent } = session;
 
     // Extract text from content blocks
@@ -127,7 +160,7 @@ class SmolACPAgent {
       }
       logger.error(`[ACP] prompt error — session: ${sessionId.slice(0, 8)}…, elapsed: ${elapsed}s, error: ${err.message}`);
       // Send final error as agent message, then end
-      this.connection.sessionUpdate({
+      safeSessionUpdate(this.connection, {
         sessionId,
         update: {
           sessionUpdate: "agent_message_chunk",
@@ -162,7 +195,7 @@ class SmolACPAgent {
     const pendingToolCalls = new Map(); // "name|argsHash" → callId
 
     const onToken = ({ content }) => {
-      conn.sessionUpdate({
+      safeSessionUpdate(conn, {
         sessionId,
         update: {
           sessionUpdate: "agent_message_chunk",
@@ -174,7 +207,7 @@ class SmolACPAgent {
     const onThinking = ({ content }) => {
       const preview = content.length > 80 ? content.slice(0, 80) + "…" : content;
       logger.debug(`[ACP] thinking — ${preview}`);
-      conn.sessionUpdate({
+      safeSessionUpdate(conn, {
         sessionId,
         update: {
           sessionUpdate: "agent_thought_chunk",
@@ -184,6 +217,14 @@ class SmolACPAgent {
     };
 
     const onToolCall = ({ name, args }) => {
+      // If this tool will go through the approval flow, skip — the approval
+      // handler sends its own tool_call via requestPermission. Emitting here
+      // too would create a duplicate callId that never gets completed, causing
+      // ACP clients to think an edit is stuck "in_progress" and revert it.
+      if (!agent._approveAll && agent._approvalHandler && requiresApproval(name)) {
+        return;
+      }
+
       const callId = this._nextCallId(session);
       const key = `${name}|${JSON.stringify(args)}`;
       pendingToolCalls.set(key, callId);
@@ -205,7 +246,7 @@ class SmolACPAgent {
         locations.push({ path: args.filePath });
       }
 
-      conn.sessionUpdate({
+      safeSessionUpdate(conn, {
         sessionId,
         update: {
           sessionUpdate: "tool_call",
@@ -241,7 +282,7 @@ class SmolACPAgent {
         : JSON.stringify(result).slice(0, 100);
       logger.info(`[ACP] tool_result — ${callId}: ${name} → ${status} (${resultPreview})`);
 
-      conn.sessionUpdate({
+      safeSessionUpdate(conn, {
         sessionId,
         update: {
           sessionUpdate: "tool_call_update",
@@ -253,7 +294,6 @@ class SmolACPAgent {
     };
 
     // Approval handler — use ACP requestPermission
-    const prevApproveAll = agent._approveAll;
     if (!agent._approveAll) {
       agent.setApprovalHandler(async (name, args) => {
         const callId = this._nextCallId(session);
@@ -301,10 +341,24 @@ class SmolACPAgent {
 
           const selected = response.outcome.optionId;
           logger.info(`[ACP] permission result — ${callId}: ${selected}`);
+
+          const approved = selected === "allow_once" || selected === "allow_always";
+          if (approved) {
+            // Notify client the tool is now executing
+            safeSessionUpdate(conn, {
+              sessionId,
+              update: {
+                sessionUpdate: "tool_call_update",
+                toolCallId: callId,
+                status: "in_progress",
+              },
+            });
+          }
+
           if (selected === "allow_always") {
             return { approved: true, approveAll: true };
           }
-          return { approved: selected === "allow_once" };
+          return { approved };
         } catch (err) {
           logger.warn(`Permission request failed: ${err.message}`);
           return { approved: false };
@@ -314,9 +368,10 @@ class SmolACPAgent {
 
     // ask_user handler — complete the turn with the question as response,
     // client sends the answer as the next prompt
+    const previousAskHandler = getAskHandler();
     const askHandler = async (question) => {
       // Send the question as an agent message so the client sees it
-      conn.sessionUpdate({
+      safeSessionUpdate(conn, {
         sessionId,
         update: {
           sessionUpdate: "agent_message_chunk",
@@ -340,8 +395,11 @@ class SmolACPAgent {
       agent.off("thinking", onThinking);
       agent.off("tool_call", onToolCall);
       agent.off("tool_result", onToolResult);
-      agent._approveAll = prevApproveAll;
+      // Note: _approveAll is intentionally NOT reverted — "Allow always"
+      // should persist across prompt turns within the same session.
       agent.setApprovalHandler(null);
+      // Restore previous ask handler to avoid cross-session interference
+      setAskHandler(previousAskHandler);
     };
   }
 }

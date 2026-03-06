@@ -151,6 +151,10 @@ register("replace_in_file", {
     },
   },
   async execute({ filePath, oldText, newText, replaceAll }, { cwd = process.cwd() } = {}) {
+    if (!oldText) {
+      return { error: "oldText must be non-empty" };
+    }
+
     const resolved = resolveJailedPath(cwd, filePath);
 
     if (!fs.existsSync(resolved)) {

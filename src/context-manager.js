@@ -370,16 +370,68 @@ export class ContextManager {
       keptTokens += scored.tokens;
     }
 
+    // ── Fix orphaned tool_calls / tool results ──
+    // If an assistant message with tool_calls is kept, force-include its
+    // subsequent tool result messages. If a tool result is kept, force-include
+    // its preceding assistant message with tool_calls.
+    const allIndices = new Set(keptIndices);
+
+    // Forward pass: assistant with tool_calls → include following tool results
+    for (const idx of [...allIndices]) {
+      const msg = restMessages[idx];
+      if (msg?.role === 'assistant' && msg.tool_calls?.length > 0) {
+        // Include subsequent tool results
+        for (let j = idx + 1; j < restMessages.length; j++) {
+          if (restMessages[j]?.role === 'tool') {
+            allIndices.add(j);
+          } else {
+            break; // tool results are contiguous
+          }
+        }
+      }
+    }
+
+    // Backward pass: tool result → include preceding assistant with tool_calls
+    for (const idx of [...allIndices]) {
+      const msg = restMessages[idx];
+      if (msg?.role === 'tool') {
+        // Find preceding assistant with tool_calls
+        for (let j = idx - 1; j >= 0; j--) {
+          if (restMessages[j]?.role === 'assistant' && restMessages[j].tool_calls?.length > 0) {
+            allIndices.add(j);
+            break;
+          }
+          if (restMessages[j]?.role !== 'tool') break;
+        }
+      }
+    }
+
+    // Rebuild messagesToKeep with fixed indices
+    const fixedMessages = [];
+    for (const idx of allIndices) {
+      const existing = messagesToKeep.find(s => s.index === idx);
+      if (existing) {
+        fixedMessages.push(existing);
+      } else {
+        fixedMessages.push({
+          msg: restMessages[idx],
+          index: idx,
+          tokens: estimateMessageTokens(restMessages[idx]),
+          importance: calculateMessageImportance(restMessages[idx], idx, restMessages),
+        });
+      }
+    }
+
     // Re-sort by original index to maintain conversation order
-    messagesToKeep.sort((a, b) => a.index - b.index);
+    fixedMessages.sort((a, b) => a.index - b.index);
 
     // Extract messages in order
-    const keptMessages = messagesToKeep.map(s => s.msg);
+    const keptMessages = fixedMessages.map(s => s.msg);
 
-    const prunedCount = restMessages.length - messagesToKeep.length;
+    const prunedCount = restMessages.length - fixedMessages.length;
     if (prunedCount > 0) {
       // Build a breadcrumb summarising what was pruned
-      const pruned = restMessages.filter((_, i) => !keptIndices.has(i));
+      const pruned = restMessages.filter((_, i) => !allIndices.has(i));
       const toolsUsed = new Set();
       const userTopics = [];
 

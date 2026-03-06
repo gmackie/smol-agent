@@ -109,7 +109,7 @@ register("run_command", {
         command,
         {
           cwd: resolvedCwd,
-          timeout: timeout || 30_000,
+          timeout: Math.min(timeout || 30_000, 300_000),
           encoding: "utf-8",
           maxBuffer: 10 * 1024 * 1024,
         },
