@@ -23,6 +23,7 @@ import "./tools/reflection.js";
 import "./tools/memory.js";
 import { setSubAgentConfig } from "./tools/sub_agent.js";
 import "./tools/context_docs.js";
+import "./tools/git.js";
 
 // ── Thinking tags parser ─────────────────────────────────────────────
 
@@ -600,6 +601,16 @@ export class Agent extends EventEmitter {
 
         // Reset consecutive agent retries on successful stream
         consecutiveAgentRetries = 0;
+
+        // Guard: if the stream timeout fired but the stream completed anyway
+        // (race condition), reset the abort controller so tool execution isn't blocked.
+        // This is safe because user-initiated cancel() would have caused the stream
+        // to throw, not complete normally.
+        if (this.abortController.signal.aborted) {
+          logger.info("Resetting stale abort controller (stream timeout race)");
+          this.abortController = new AbortController();
+          setSubAgentConfig({ signal: this.abortController.signal });
+        }
 
         // ── Parse thinking tags ──
         const { thinking, cleaned: cleanedContent } = parseThinkingContent(fullContent);
