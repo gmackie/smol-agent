@@ -27,47 +27,42 @@ smol-agent gives a local language model the tools it needs to read, write, and e
 ## What it looks like
 
 ```
- smol-agent (model: qwen2.5-coder:32b)
+smol-agent (model: qwen2.5-coder:32b)
 
- you> add error handling to the /users endpoint
+ > add error handling to the /users endpoint
 
-   [tool] list_files(pattern: src/**)
-   [tool] read_file(path: src/routes/users.js)
-   [tool] run_command(command: src/routes/users.js, command: "sed -i s/const users/const safeUsers/ src/routes/users.js")
- ⠋ thinking...
+    ⎿  (project context gathered)
+    ⎿  [tool] list_files(pattern: src/**)
+    ⎿  [tool] read_file(filePath: src/routes/users.js)
+    ⎿  [tool] replace_in_file(filePath: src/routes/users.js, oldText: ..., newText: ...)
+ ⏋ thinking...
 ```
 
-Once the agent finishes its tool-call loop, it prints a response:
+When the agent finishes, it streams a response:
 
 ```
- smol-agent (model: qwen2.5-coder:32b)
+ ▸  I've added error handling to the `/users` endpoint. The changes include:
 
- you> add error handling to the /users endpoint
+    - Input validation for request body
+    - Try-catch around database operations  
+    - Proper error responses with status codes
 
-   [tool] list_files(pattern: src/**)
-   [tool] read_file(path: src/routes/users.js)
-   [tool] run_command(command: src/routes/users.js, command: "sed -i s/const users/const safeUsers/ src/routes/users.js")
-
- agent> Done. I wrapped the database query in a try/catch and added a 500
-        response with a JSON error body. The endpoint now returns
-        { "error": "Internal server error" } on failure.
-
- you> █
+    See src/routes/users.js for the implementation.
 ```
 
-When the agent needs clarification, it asks inline and waits for your answer:
+When the agent needs clarification:
 
 ```
- Agent asks: There are two /users endpoints (in routes/users.js and
- routes/admin.js). Which one should I update?
+ ?  Which /users endpoint should I modify? [answer]
+    ⎿  (answer) the public one
 
- answer> █
+ > continue...
 ```
 
 Errors are shown in red:
 
 ```
- error: connect ECONNREFUSED 127.0.0.1:11434
+ ✗ connect ECONNREFUSED 127.0.0.1:11434
 ```
 
 ### Rich Markdown Rendering
@@ -161,7 +156,7 @@ curl -fsSL https://raw.githubusercontent.com/streed/smol-agent/main/install.sh |
 
 This will:
 1. Check Node.js, npm, and git are installed
-2. Clone smol-agent to `~/.smol-agent-src`
+2. Clone smol-agent to `~/.local/share/smol-agent`
 3. Install npm dependencies
 4. Link `smol-agent` globally
 
@@ -260,6 +255,7 @@ smol-agent "add input validation to src/api.js"
 | `/inspect` | Dump current context to CONTEXT.md |
 | `/reload-skills` | Reload skills from global and local directories |
 | `/skills` | List available skills |
+| `/reflect` | Analyze recent logs for skill opportunities |
 | `exit` / `quit` | Exit the agent |
 | `Ctrl-C` | Cancel current operation / Exit on double tap |
 
@@ -277,6 +273,7 @@ The agent has access to the following tools:
 | `list_files` | Glob-based file and directory listing |
 | `grep` | Regex search across files with line numbers |
 | `run_command` | Execute shell commands (builds, tests, git, etc.) |
+| `git` | Git commands with safety restrictions (blocks push, --force) |
 | `ask_user` | Ask the user a clarifying question and wait for a response |
 
 ### Extended Tools (available when needed)
@@ -315,9 +312,9 @@ The context manager keeps the system prompt and recent conversation while removi
 When the agent starts (or after `/clear`), it automatically gathers context about the current project and injects it into the system prompt. This gives the model immediate awareness of:
 
 - **Working directory** and **file tree** (top 2 levels, ignoring node_modules/.git/etc.)
-- **Git status** — current branch, uncommitted changes, and recent commit history
-- **Config files** — package.json, tsconfig.json, pyproject.toml, Cargo.toml, go.mod, Makefile, .env.example (whichever exist)
-- **README excerpt** — first 80 lines of any README file
+- **Git status** — current branch and uncommitted changes
+- **Project type** — detected from manifest files (package.json, pyproject.toml, Cargo.toml, etc.)
+- **AGENT.md excerpt** — first 100 lines of AGENT.md if present
 
 This means the model already knows your project layout, language, dependencies, and available scripts before you even ask your first question — so it can give better answers with fewer tool calls.
 
@@ -340,7 +337,12 @@ Skills are user-authored markdown files that teach the agent domain-specific wor
 - **Global skills** (`~/.config/smol-agent/skills/`) — available across all projects
 - **Local skills** (`.smol-agent/skills/`) — project-specific, can override global skills by name
 
-Create a `.md` file with YAML frontmatter:
+Skills use the `SKILL.md` format in subdirectories:
+
+```bash
+# Example: project-specific testing skill
+.smol-agent/skills/testing/SKILL.md
+```
 
 ```markdown
 ---
@@ -362,8 +364,8 @@ On startup, the agent sees the `name` and `description` from frontmatter in its 
 **Example: Set up a global git workflow skill**
 
 ```bash
-mkdir -p ~/.config/smol-agent/skills
-cat > ~/.config/smol-agent/skills/git.md << 'EOF'
+mkdir -p ~/.config/smol-agent/skills/git
+cat > ~/.config/smol-agent/skills/git/SKILL.md << 'EOF'
 ---
 name: git
 description: Git workflow and commit conventions
@@ -384,16 +386,16 @@ EOF
 
 ```
 src/
-├── index.js              CLI entry point, arg parsing, Ink render
+├── index.js              CLI entry point, arg parsing, TUI render
 ├── agent.js              Agent loop (EventEmitter): prompt → LLM → tool calls → repeat
-├── context.js            Project context gathering (file tree, git, configs, README)
+├── context.js            Project context gathering (file tree, git, AGENT.md excerpt)
 ├── context-manager.js    Token counting, context pruning, message summarization
 ├── logger.js             Logging with configurable levels
 ├── ollama.js             Thin wrapper around the ollama npm package
 ├── path-utils.js         Path resolution and jail security
 ├── skills.js             Skill loading and frontmatter parsing
 ├── ui/
-│   ├── App.js            Ink (React) terminal UI — message log, spinner, input
+│   ├── App.js            Terminal UI — message log, status, input
 │   └── markdown.js       Rich markdown rendering for terminal output
 └── tools/
     ├── registry.js       Tool registration and dispatch
@@ -415,9 +417,9 @@ src/
 
 Each tool file self-registers with the registry on import. The agent imports them all, and the registry serializes them into the format Ollama expects for tool-calling.
 
-On first run, `context.js` gathers a snapshot of the project (file tree, git state, config files, README) and appends it to the system prompt. This gives the model grounding in the project before any tool calls happen.
+On first run, `context.js` gathers a snapshot of the project (file tree, git state, AGENT.md excerpt) and appends it to the system prompt. This gives the model grounding in the project before any tool calls happen.
 
-The Ink UI subscribes to `tool_call`, `tool_result`, `response`, and `error` events emitted by the agent, rendering tool activity in real time with a spinner and status text. The `ask_user` tool is wired through a promise bridge so the Ink app collects the answer inline without readline conflicts.
+The terminal UI subscribes to `tool_call`, `tool_result`, `response`, and `error` events emitted by the agent, rendering tool activity in real time. The `ask_user` tool is wired through a promise bridge so the UI collects the answer inline.
 
 ## Model Benchmark
 
@@ -480,5 +482,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Acknowledgments
 
 - Built with [Ollama](https://ollama.com) for local LLM inference
-- UI powered by [Ink](https://github.com/vadimdemedes/ink) (React for terminals)
+- UI powered by [pi-tui](https://github.com/mariozechner/pi-tui) — a terminal UI library
 - Inspired by the many AI coding assistants making development easier
