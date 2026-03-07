@@ -10,6 +10,11 @@ import { classifyError, formatUserError } from "./errors.js";
 import { prehydrate } from "./prehydrate.js";
 import { ensureInitialized as ensureTiktoken } from "./token-estimator.js";
 import { ShiftLeftFeedback } from "./shift-left.js";
+import {
+  createSession,
+  saveSession as persistSession,
+  loadSession as fetchSession,
+} from "./sessions.js";
 
 // Import all tools so they self-register
 import "./tools/run_command.js";
@@ -25,6 +30,7 @@ import "./tools/memory.js";
 import { setSubAgentConfig } from "./tools/sub_agent.js";
 import "./tools/context_docs.js";
 import "./tools/git.js";
+import "./tools/session_tools.js";
 
 // ── Thinking tags parser ─────────────────────────────────────────────
 
@@ -273,6 +279,10 @@ export class Agent extends EventEmitter {
 
     // Shift-left feedback — auto-lint after file modifications (Stripe Minions pattern)
     this._shiftLeft = new ShiftLeftFeedback(this.jailDirectory);
+
+    // Session tracking — persists conversation across CLI invocations
+    this._session = null;
+    this._autoSaveSession = true;
 
     // Set the global jail directory for all tools
     registry.setJailDirectory(this.jailDirectory);
@@ -695,6 +705,12 @@ export class Agent extends EventEmitter {
           const content = cleanedContent || "(no response)";
           this.emit("response", { content });
           this.emit("token_usage", this.getTokenInfo());
+
+          // Auto-save session after each completed run
+          if (this._session && this._autoSaveSession) {
+            this.saveSession().catch(() => {});
+          }
+
           return content;
         }
 
@@ -941,6 +957,75 @@ export class Agent extends EventEmitter {
     return msg;
   }
 
+  // ── Session management ──────────────────────────────────────────────
+
+  /** Get the current session, or null if none. */
+  getSession() {
+    return this._session;
+  }
+
+  /**
+   * Start a new session.
+   * @param {string} [name] - Optional human-friendly name
+   */
+  startSession(name) {
+    this._session = createSession(name);
+    logger.info(`Session started: ${this._session.id}${name ? ` (${name})` : ""}`);
+    return this._session;
+  }
+
+  /**
+   * Resume a previously saved session.
+   * Restores conversation messages and reinitializes context.
+   * @param {string} sessionId - Session ID to resume
+   * @returns {boolean} True if session was loaded, false if not found
+   */
+  async resumeSession(sessionId) {
+    const data = await fetchSession(this.jailDirectory, sessionId);
+    if (!data) return false;
+
+    // Initialize system context first
+    await this._init();
+
+    // Restore conversation messages after system message
+    const restoredMessages = data.messages || [];
+    this.messages.push(...restoredMessages);
+
+    // Restore session metadata (without messages)
+    this._session = {
+      id: data.id,
+      name: data.name,
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
+      messageCount: data.messageCount,
+      summary: data.summary,
+    };
+
+    logger.info(`Session resumed: ${data.id} (${restoredMessages.length} messages)`);
+    this.emit("session_resumed", { session: this._session, messageCount: restoredMessages.length });
+    return true;
+  }
+
+  /**
+   * Save the current session to disk.
+   * Called automatically after each agent run if a session is active.
+   */
+  async saveSession() {
+    if (!this._session) return null;
+    try {
+      const saved = await persistSession(this.jailDirectory, this._session, this.messages);
+      // Update local session metadata
+      this._session.updatedAt = saved.updatedAt;
+      this._session.messageCount = saved.messageCount;
+      this._session.summary = saved.summary;
+      logger.info(`Session saved: ${this._session.id} (${saved.messageCount} messages)`);
+      return saved;
+    } catch (err) {
+      logger.warn(`Failed to save session: ${err.message}`);
+      return null;
+    }
+  }
+
   /** Cancel the current operation. */
   cancel() {
     if (this.running && this.abortController) {
@@ -961,6 +1046,8 @@ export class Agent extends EventEmitter {
     this._pendingInjections = [];
     this._approveAll = false;
     this._shiftLeft.reset();
+    // Clear session so next run starts fresh (unless a new session is started)
+    this._session = null;
   }
 
   /** Get the current project context as a string. */
