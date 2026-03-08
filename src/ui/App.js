@@ -14,10 +14,16 @@ import {
 import chalk from "chalk";
 import { createRequire } from "node:module";
 import { writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { execFile } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const require = createRequire(import.meta.url);
-import { execFile } from "node:child_process";
+// package.json is in the project root, two levels up from src/ui/App.js
+const packageJson = require(join(__dirname, "..", "..", "package.json"));
 import { setAskHandler } from "../tools/ask_user.js";
 import { formatDiff, formatReplaceDiff, formatNewFileDiff } from "./diff.js";
 import { saveSetting } from "../settings.js";
@@ -429,11 +435,14 @@ async function getGitStats(cwd) {
 }
 
 /**
- * Build the left part of the context bar (model + token usage).
+ * Build the left part of the context bar (version + model + token usage).
  */
 function buildContextBarLeft(modelName, tokenUsage) {
+  const version = packageJson.version;
+  const versionPart = chalk.dim(`smol-agent v${version}`);
   const modelPart = chalk.magenta(modelName || "");
-  if (!tokenUsage) return " " + modelPart + chalk.dim(" |");
+  const leftPart = versionPart + chalk.dim(" | ") + modelPart;
+  if (!tokenUsage) return " " + leftPart + chalk.dim(" |");
   const { percentage, used, max } = tokenUsage;
   const barWidth = 10;
   const filled = Math.round((percentage / 100) * barWidth);
@@ -444,7 +453,7 @@ function buildContextBarLeft(modelName, tokenUsage) {
   else if (percentage > 50) colorFn = chalk.cyan;
   else colorFn = chalk.green;
   const formatTokens = (n) => (n >= 1000 ? `${Math.round(n / 1000)}K` : String(n));
-  return " " + modelPart + chalk.dim(" | ") + colorFn(`[${bar}] ${percentage}%`) + chalk.dim(` ${formatTokens(used)}/${formatTokens(max)} |`);
+  return " " + leftPart + chalk.dim(" | ") + colorFn(`[${bar}] ${percentage}%`) + chalk.dim(` ${formatTokens(used)}/${formatTokens(max)} |`);
 }
 
 /**
@@ -1137,7 +1146,7 @@ Reflect on these logs and determine if there's a skill worth creating. If the lo
     tui.requestRender();
   };
 
-  const onToolResult = ({ name: _name, result }) => {
+  const onToolResult = ({ result }) => {
     // Display a git-style diff for file editing tools
     if (result && result._display) {
       const d = result._display;

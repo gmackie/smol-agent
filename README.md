@@ -6,7 +6,7 @@
 
 A small coding agent that runs in your terminal, powered by [Ollama](https://ollama.com) for local LLM hosting.
 
-smol-agent gives a local language model the tools it needs to read, write, and edit code, run shell commands, search across a codebase, and ask you for clarification when it gets stuck — all wrapped in a colorful [Ink](https://github.com/vadimdemedes/ink)-based terminal UI.
+smol-agent gives a local language model the tools it needs to read, write, and edit code, run shell commands, search across a codebase, and ask you for clarification when it gets stuck — all wrapped in a colorful [pi-tui](https://github.com/mariozechner/pi-tui) and chalk-based terminal UI.
 
 ## Table of Contents
 
@@ -85,7 +85,7 @@ This makes agent responses much easier to read and understand at a glance.
 ## Prerequisites
 
 - **Node.js** >= 20.0.0
-- **Ollama** running locally (default `http://127.0.0.1:11434`) **OR** API access to OpenAI, Anthropic, or Grok
+- **Ollama** running locally (default `http://127.0.0.1:11434`) **OR** API access to OpenAI, Anthropic, Grok, Groq, or Gemini
 
 ### Setting up Ollama
 
@@ -101,6 +101,96 @@ If using Ollama (the default provider):
    ```
    export OLLAMA_API_KEY=your-key-here
    ```
+
+### Setting up OpenAI
+
+To use OpenAI's models (GPT-4o, GPT-4, etc.):
+
+1. Get an API key from [OpenAI's platform](https://platform.openai.com/api-keys)
+2. Set the environment variable:
+   ```bash
+   export OPENAI_API_KEY=your-key-here
+   ```
+3. Run with the OpenAI provider:
+   ```bash
+   smol-agent -p openai "your prompt here"
+   ```
+
+Default model: `gpt-4o`
+
+### Setting up Anthropic
+
+To use Anthropic's Claude models:
+
+1. Get an API key from [Anthropic's console](https://console.anthropic.com/)
+2. Set the environment variable:
+   ```bash
+   export ANTHROPIC_API_KEY=your-key-here
+   ```
+3. Run with the Anthropic provider:
+   ```bash
+   smol-agent -p anthropic "your prompt here"
+   ```
+
+Default model: `claude-sonnet-4-20250514`
+
+### Setting up Grok (xAI)
+
+To use xAI's Grok models:
+
+1. Get an API key from [xAI's console](https://console.x.ai/)
+2. Set the environment variable:
+   ```bash
+   export XAI_API_KEY=your-key-here
+   ```
+3. Run with the Grok provider:
+   ```bash
+   smol-agent -p grok "your prompt here"
+   ```
+
+Default model: `grok-4-latest`
+
+### Setting up Groq
+
+To use Groq's fast inference:
+
+1. Get an API key from [Groq's console](https://console.groq.com/)
+2. Set the environment variable:
+   ```bash
+   export GROQ_API_KEY=your-key-here
+   ```
+3. Run with the Groq provider:
+   ```bash
+   smol-agent -p groq "your prompt here"
+   ```
+
+Default model: `openai/gpt-oss-120b`
+
+### Setting up Gemini (Google)
+
+To use Google's Gemini models:
+
+1. Get an API key from [Google AI Studio](https://aistudio.google.com/app/apikey)
+2. Set the environment variable:
+   ```bash
+   export GEMINI_API_KEY=your-key-here
+   ```
+3. Run with the Gemini provider:
+   ```bash
+   smol-agent -p gemini "your prompt here"
+   ```
+
+Default model: `gemini-2.5-pro`
+
+### Custom OpenAI-Compatible Endpoints
+
+You can use any OpenAI-compatible API by passing the base URL as the provider:
+
+```bash
+smol-agent -p https://your-api.example.com/v1 "your prompt here"
+```
+
+This works with self-hosted models (vLLM, LocalAI, etc.) and other OpenAI-compatible services.
 
 ### Optional: tree-sitter (for enhanced code analysis)
 
@@ -208,17 +298,15 @@ smol-agent "add input validation to src/api.js"
 | Flag | Description |
 |------|-------------|
 | `-m, --model <name>` | Model to use (default depends on provider) |
-| `-p, --provider <name>` | LLM provider: `ollama`, `openai`, `anthropic`, `grok` (default: `ollama`) |
+| `-p, --provider <name>` | LLM provider: `ollama`, `openai`, `anthropic`, `grok`, `groq`, `gemini` (default: `ollama`) |
 | `-H, --host <url>` | Provider host/base URL (default: provider-specific) |
 | `--api-key <key>` | API key for cloud providers (or use env vars) |
 | `-d, --directory <path>` | Set working directory and jail boundary (default: cwd) |
 | `--all-tools` | Expose all tools (auto-detected for 30B+ models) |
 | `--auto-approve` | Skip approval prompts for write/command tools (alias: `--yolo`) |
-| `--approve-writes` | Auto-approve file write operations only |
-| `--approve-execute` | Auto-approve command execution only |
 | `--acp` | Run as ACP (Agent Client Protocol) server over stdio |
 | `--self-update` | Update smol-agent to the latest version |
-| `--help` | Show help |
+| `--help` | Show help message |
 
 ### Session Management
 
@@ -228,40 +316,24 @@ smol-agent "add input validation to src/api.js"
 | `-c, --continue` | Resume the most recent session |
 | `--session-name <name>` | Name for the new session |
 | `--list-sessions` | List all saved sessions |
-
-### Providers
-
-| Provider | Description | API Key Env Var |
-|----------|-------------|-----------------|
-| `ollama` | Local LLMs via Ollama (default) | None (optional: `OLLAMA_API_KEY` for web tools) |
-| `openai` | OpenAI API | `OPENAI_API_KEY` |
-| `anthropic` | Anthropic Claude API | `ANTHROPIC_API_KEY` |
-| `grok` | xAI Grok API | `XAI_API_KEY` |
-| `groq` | Groq API (fast inference) | `GROQ_API_KEY` |
-| `gemini` | Google Gemini API | `GEMINI_API_KEY` |
+| `--sessions` | Alias for `--list-sessions` |
 
 ### Commands (interactive mode)
 
 | Command | Description |
 |---------|-------------|
-| `/clear` | Clear conversation history |
-| `/model <name>` | Switch to a different model |
-| `/model list` | List available models |
+| `/clear` | Clear conversation history and start a new session |
 | `/sessions` | List saved sessions |
 | `/session save [name]` | Save the current session (with optional name) |
-| `/session load <id>` | Load a saved session |
-| `/session delete <id>` | Delete a saved session |
-| `/session rename <id> <name>` | Rename a session |
+| `/session load <id>` | Load a saved session by ID |
+| `/session delete <id>` | Delete a saved session by ID |
+| `/session rename <id> <name>` | Rename a saved session |
 | `/inspect` | Dump current context to CONTEXT.md |
 | `/reload-skills` | Reload skills from global and local directories |
 | `/skills` | List available skills |
 | `/reflect` | Analyze recent logs for skill opportunities |
-| `/architect <task>` | Run in architect mode (read-only analysis → plan → execute) |
-| `/undo` | Roll back to the last git checkpoint |
-| `/checkpoints` | List available checkpoints |
-| `/approve <category>` | Auto-approve a tool category (read/write/execute/network/safe) |
 | `exit` / `quit` | Exit the agent |
-| `Ctrl-C` | Cancel current operation / Exit on double tap |
+| `Ctrl-C` | Cancel current operation (double-tap to exit) |
 
 ## Tools
 
@@ -294,259 +366,92 @@ The agent has access to the following tools:
 | `reflect` | Summarize work done, what went well, and areas for improvement |
 | `remember` | Save a fact/pattern/preference to persistent memory across sessions |
 | `recall` | Retrieve memories from persistent storage |
-| `memory_bank_read` | Read structured Memory Bank files (project context, tech context, progress, learnings) |
-| `memory_bank_write` | Write to structured Memory Bank files for cross-session knowledge |
-| `memory_bank_init` | Initialize Memory Bank with template files |
 | `save_context` | Save a dense summary of a directory/code area for future sessions |
-| `delegate` | Spawn a read-only sub-agent for focused research tasks |
-
-The model decides which tools to call and when. It will loop — calling tools and feeding results back in — until it produces a final text response.
+| `delegate` | Spawn a sub-agent for focused research tasks |
 
 ## Context Management
 
-smol-agent includes intelligent context management to handle large conversations without hitting token limits:
+The agent manages context window limits automatically:
 
-- **Proactive summarization** — At 55% capacity, starts LLM-based summarization of old messages
-- **Pruning** — At 70% capacity, removes old messages and large tool results
-- **Aggressive pruning** — At 85% capacity, more aggressively prunes history
-- **Tool result truncation** — Large outputs are automatically truncated to 15k characters
-- **Error recovery** — If Ollama returns a context overflow error, the agent prunes and informs you to retry
+1. **Token tracking**: Monitors token usage throughout the conversation
+2. **Intelligent pruning**: When approaching limits, removes less important messages first
+3. **Context summarization**: Summarizes old conversation turns to compress context
+4. **Result truncation**: Truncates large tool results while preserving key information
 
-The context manager keeps the system prompt and recent conversation while removing older messages as needed.
+This allows the agent to work on large codebases without running into context window errors.
 
 ## Context Injection
 
-When the agent starts (or after `/clear`), it automatically gathers context about the current project and injects it into the system prompt. This gives the model immediate awareness of:
+smol-agent can inject project-specific context into the system prompt:
 
-- **Working directory** and **file tree** (top 2 levels, ignoring node_modules/.git/etc.)
-- **Repository map** — tree-sitter AST-based symbol extraction with PageRank cross-file reference ranking (inspired by [Aider](https://aider.chat)), showing the most important files and their key symbols
-- **Git status** — current branch and uncommitted changes
-- **Project type** — detected from manifest files (package.json, pyproject.toml, Cargo.toml, etc.)
-- **AGENT.md excerpt** — first 100 lines of AGENT.md if present
-- **Memory Bank** — structured cross-session knowledge (project context, tech context, progress, learnings)
-- **Shared coding rules** — automatically detects and follows rule files from other tools (`.cursorrules`, `CLAUDE.md`, `.clinerules`, etc.)
-
-This means the model already knows your project layout, language, dependencies, key symbols, and available scripts before you even ask your first question — so it can give better answers with fewer tool calls.
+- **AGENT.md**: Place a file named `AGENT.md` in your project root. It will be included in the context sent to the LLM.
+- **Skills**: Markdown files in `.smol-agent/skills/` or `~/.config/smol-agent/skills/` are loaded as skills.
 
 ## Persistent Memory
 
-smol-agent remembers things across sessions using four mechanisms, all stored in the `.smol-agent/` directory (gitignored by default):
+The agent can remember facts across sessions using the `remember` and `recall` tools:
 
-### Key-value memories (`.smol-agent/memory.json`)
+- **remember**: Save a fact, pattern, or preference to persistent storage
+- **recall**: Retrieve memories (optionally filtered by key or category)
 
-The agent can call `remember` to store facts like test commands, coding conventions, or project quirks. These are automatically loaded into the system prompt on startup. Use `recall` to retrieve them.
+Memories are stored in `~/.config/smol-agent/memories.json` and persist across sessions.
 
-### Memory Bank (`.smol-agent/memory-bank/`)
+## Skills
 
-Inspired by [Kilocode](https://github.com/kilocode/kilocode), the Memory Bank stores structured cross-session knowledge in markdown files:
+Skills are markdown files that define reusable prompts for common tasks:
 
-- **projectContext.md** — What the project does, tech stack, key goals
-- **techContext.md** — Architecture decisions, patterns, conventions
-- **progress.md** — Current status, recent changes, known issues
-- **learnings.md** — What worked, what didn't, lessons learned
+- **Location**: `.smol-agent/skills/` (project) or `~/.config/smol-agent/skills/` (global)
+- **Format**: Markdown with `# Skill Name` and `Description: ...` in the header
+- **Loading**: Skills are loaded on startup and injected into the system prompt
 
-Use `memory_bank_init` to create the templates, then the agent updates them as it learns about your project. All Memory Bank content is automatically injected into the system prompt on startup.
-
-### Context docs (`.smol-agent/docs/`)
-
-After exploring a directory, the agent can call `save_context` to write a short, dense summary (key files, exports, patterns). On next startup, the system prompt lists available docs so the agent can `read_file` them instead of re-exploring from scratch.
-
-### Skills
-
-Skills are user-authored markdown files that teach the agent domain-specific workflows. They can be:
-
-- **Global skills** (`~/.config/smol-agent/skills/`) — available across all projects
-- **Local skills** (`.smol-agent/skills/`) — project-specific, can override global skills by name
-
-Skills use the `SKILL.md` format in subdirectories:
-
-```bash
-# Example: project-specific testing skill
-.smol-agent/skills/testing/SKILL.md
-```
+Example skill:
 
 ```markdown
----
-name: testing
-description: How to run and write tests for this project
----
+# Fix Lint Errors
+Description: Fix linting errors in the codebase
 
-## Running tests
-npm test              # unit tests
-npm run test:e2e      # end-to-end tests
-
-## Conventions
-- Test files go in test/unit/ with .test.js suffix
-- Use Jest globals: `describe`, `test`, `expect` from `@jest/globals`
-```
-
-On startup, the agent sees the `name` and `description` from frontmatter in its system prompt (with source: "global" or "local"). When a skill is relevant, it reads the full file for detailed instructions.
-
-**Example: Set up a global git workflow skill**
-
-```bash
-mkdir -p ~/.config/smol-agent/skills/git
-cat > ~/.config/smol-agent/skills/git/SKILL.md << 'EOF'
----
-name: git
-description: Git workflow and commit conventions
----
-
-## Commit message format
-- Use conventional commits: feat:, fix:, docs:, refactor:, test:
-- Keep first line under 50 chars
-- Reference issues: #123
-
-## Branch naming
-- feature/<description>
-- fix/<description>
-EOF
+Find and fix all linting errors in the project. Run the linter first to identify issues, then fix each one systematically.
 ```
 
 ## Architecture
 
 ```
-src/
-├── index.js              CLI entry point, arg parsing, TUI render
-├── agent.js              Agent loop (EventEmitter): prompt → LLM → tool calls → repeat
-│                         Includes architect mode, git checkpoints, granular auto-approve
-├── architect.js          Architect mode — read-only analysis pass → plan → execution
-├── checkpoint.js         Shadow git repo checkpoints for rollback (undo support)
-├── context.js            Project context gathering (file tree, git, repo map, memory bank)
-├── context-manager.js    Token counting, context pruning, message summarization
-├── logger.js             Logging with configurable levels
-├── memory-bank.js        Structured cross-session knowledge (Kilocode-inspired)
-├── ollama.js             Thin wrapper around the ollama npm package
-├── path-utils.js         Path resolution and jail security
-├── repo-map.js           Tree-sitter AST symbol extraction with PageRank ranking (Aider-inspired)
-├── skills.js             Skill loading and frontmatter parsing
-├── ts-lint.js            Tree-sitter based syntax checking after edits (Aider-inspired)
-├── ui/
-│   ├── App.js            Terminal UI — message log, status, input, slash commands
-│   └── markdown.js       Rich markdown rendering for terminal output
-└── tools/
-    ├── registry.js       Tool registration, dispatch, and per-category approval
-    ├── file_tools.js     read_file, write_file, replace_in_file (with fuzzy matching and lint)
-    ├── list_files.js     Glob-based file listing
-    ├── grep.js           Regex search across files
-    ├── run_command.js    Shell command execution
-    ├── web_search.js     Web search via Ollama API
-    ├── web_fetch.js      URL fetch via Ollama API
-    ├── ask_user.js       Ask the user for clarification
-    ├── git.js            Git operations (with safety restrictions)
-    ├── plan_tools.js     Plan management tools
-    ├── save_plan.js      Plan persistence utilities
-    ├── reflection.js     Work reflection and summarization
-    ├── memory.js         Persistent remember/recall and Memory Bank tools
-    ├── context_docs.js   save_context tool for directory summaries
-    └── sub_agent.js      Delegate tool for focused sub-agent tasks
+User prompt → Agent.run() → LLM Provider API → tool calls → execute tools → feed results back → repeat until text response
 ```
 
-Each tool file self-registers with the registry on import. The agent imports them all, and the registry serializes them into the format Ollama expects for tool-calling.
-
-On first run, `context.js` gathers a snapshot of the project (file tree, repo map, git state, AGENT.md excerpt, memory bank) and appends it to the system prompt. This gives the model grounding in the project before any tool calls happen.
-
-The terminal UI subscribes to `tool_call`, `tool_result`, `response`, and `error` events emitted by the agent, rendering tool activity in real time. The `ask_user` tool is wired through a promise bridge so the UI collects the answer inline.
+The agent is an EventEmitter that drives a loop: send messages to the LLM provider, check for tool calls, execute them, push results back, and repeat (max 25 iterations). The pi-tui UI subscribes to events (`tool_call`, `tool_result`, `response`, `error`) to render progress.
 
 ## Advanced Features
 
-### Architect Mode (inspired by Aider/Kilocode)
+### ACP Server Mode
 
-Architect mode uses a two-pass approach for complex tasks:
-
-1. **Analysis pass** — The agent reads files and analyzes the codebase in read-only mode, producing an implementation plan
-2. **Execution pass** — The plan is handed to an editor pass that makes the actual changes
-
-Use `/architect <task>` to run a task in architect mode, or `/architect` to toggle it for the next prompt.
-
-### Git Checkpoints
-
-The agent automatically creates checkpoints before each operation using a secondary git repo in `.smol-agent/checkpoints/`. This keeps checkpoint history completely isolated from your main repo — no stash pollution, no staging side effects. Use `/undo` to roll back to the previous checkpoint, or `/checkpoints` to list available restore points.
-
-### Repository Map with PageRank (inspired by Aider)
-
-The repo map uses tree-sitter to parse source files and extract symbols (functions, classes, types, exports) across 7 languages (JS/TS, Python, Go, Rust, Java, Ruby). Cross-file references are analyzed using a directed graph, and files are ranked by PageRank score — surfacing the most important and interconnected files in the codebase.
-
-### Fuzzy Diff Matching (inspired by Kilocode)
-
-When `replace_in_file` can't find an exact match, it falls back through:
-
-1. **Whitespace-normalized matching** — ignores tab/space differences
-2. **Fuzzy matching** (80% similarity threshold) — finds the best approximate match using line-level similarity scoring
-3. **Hint-based error** — suggests the closest matching line if no fuzzy match is found
-
-### Tree-sitter Syntax Lint (inspired by Aider)
-
-After every `write_file` and `replace_in_file`, the modified file is parsed with tree-sitter to detect syntax errors. If ERROR nodes are found in the AST, a `syntaxWarning` is included in the tool result, alerting the agent to fix the issue immediately.
-
-### Granular Auto-Approve
-
-Instead of all-or-nothing `--auto-approve`, you can approve specific categories:
-
-- `--approve-writes` — auto-approve file write operations
-- `--approve-execute` — auto-approve command execution
-- `/approve <category>` — approve a category interactively (read/write/execute/network/safe)
-
-## Model Benchmark
-
-smol-agent is tested against a variety of Ollama models to ensure it works well across different model sizes and capabilities. The benchmark runs end-to-end tests on each model, validating that tool calling, file operations, and command execution work correctly.
-
-### Latest Results
-
-<!-- BENCHMARK-RESULTS-START -->
-_No benchmark results yet. Results will appear here after the next benchmark run._
-<!-- BENCHMARK-RESULTS-END -->
-
-### Running the Benchmark
-
-The benchmark is automated via GitHub Actions. To run it locally:
+Run as an Agent Client Protocol server for IDE/editor integration:
 
 ```bash
-# Install dependencies
-npm install
-
-# Run E2E tests with a specific model
-SMOL_TEST_MODEL=qwen2.5-coder:32b node test/e2e/runner.js
+smol-agent --acp
 ```
 
-### Benchmark Configuration
-
-The benchmark uses the following parameters:
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `SMOL_TEST_MODEL` | Model to test | `qwen2.5-coder:32b` |
-| `SMOL_TEST_RETRIES` | Number of retries on failure | 1 |
-| `SMOL_TEST_MAX_ITER` | Max tool call iterations per test | 20 |
-| `SMOL_TEST_CTX` | Context window size | 32768 |
-
-Check the [GitHub Actions workflow](https://github.com/streed/smol-agent/actions) for the latest benchmark results. Each model run produces detailed test output showing which tasks passed or failed.
-
-### Choosing a Model
-
-- **Recommended for most users**: `qwen2.5-coder:7b` or `qwen3-coder:14b` — good balance of speed and capability
-- **For larger projects**: Use 30B+ models like `qwen3-coder:32b` or `qwen3-coder-next` for better context handling
-- **For resource-constrained environments**: `ministral-3:3b` or `rnj-1:8b` work well with limited memory
-- **For maximum capability**: `minimax-m2.5` or `glm-5` offer the strongest reasoning at the cost of slower responses
+Communicates via JSON-RPC over stdio, compatible with ACP-compatible editors.
 
 ## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-- **Bug reports**: Use the [bug report template](.github/ISSUE_TEMPLATE/bug_report.md)
-- **Feature requests**: Use the [feature request template](.github/ISSUE_TEMPLATE/feature_request.md)
-- **Pull requests**: See the [PR template](.github/PULL_REQUEST_TEMPLATE.md)
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## Security
 
-Please review our [Security Policy](SECURITY.md) before reporting vulnerabilities.
+smol-agent operates within a "jail" directory:
+
+- All file operations are restricted to the jail directory
+- Commands like `rm -rf /` are blocked
+- Git push and `--force` are blocked
+
+However, **you are responsible for reviewing changes** before approving tool calls. The agent will ask for approval before:
+
+- Writing files
+- Running shell commands
+
+Use `--auto-approve` (or `--yolo`) to skip approvals (use with caution).
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- Built with [Ollama](https://ollama.com) for local LLM inference
-- UI powered by [pi-tui](https://github.com/mariozechner/pi-tui) — a terminal UI library
-- Inspired by the many AI coding assistants making development easier
+[MIT](LICENSE)

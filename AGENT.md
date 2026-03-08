@@ -2,7 +2,7 @@
 
 ## What this project is
 
-smol-agent is a terminal-based coding agent powered by Ollama (local LLMs). It gives a language model tools to read/write/edit files, run shell commands, search code, and ask the user questions — then loops until the model produces a final text response. The UI is built with Ink (React for the terminal).
+smol-agent is a terminal-based coding agent powered by Ollama (local LLMs). It gives a language model tools to read/write/edit files, run shell commands, search code, and ask the user questions — then loops until the model produces a final text response. The UI is built with pi-tui and chalk for colorful terminal rendering.
 
 ## Commands
 
@@ -47,7 +47,7 @@ Env vars: `SMOL_AGENT_PROVIDER`, `OPENAI_API_KEY`, `XAI_API_KEY`, `GROQ_API_KEY`
 User prompt → Agent.run() → LLM Provider API → tool calls → execute tools → feed results back → repeat until text response
 ```
 
-The agent is an EventEmitter that drives a loop: send messages to the LLM provider, check for tool calls, execute them, push results back, and repeat (max 25 iterations). The Ink UI subscribes to events (`tool_call`, `tool_result`, `response`, `error`) to render progress.
+The agent is an EventEmitter that drives a loop: send messages to the LLM provider, check for tool calls, execute them, push results back, and repeat (max 25 iterations). The pi-tui UI subscribes to events (`tool_call`, `tool_result`, `response`, `error`) to render progress.
 
 ## File map
 
@@ -55,7 +55,7 @@ The agent is an EventEmitter that drives a loop: send messages to the LLM provid
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `index.js` | 327 | CLI entry point. Parses args, creates provider via `createProvider()`, creates `Agent`, renders Ink `App`. Auto-detects tool exposure based on model size (30B+ gets all tools). |
+| `index.js` | 327 | CLI entry point. Parses args, creates provider via `createProvider()`, creates `Agent`, renders pi-tui `App`. Auto-detects tool exposure based on model size (30B+ gets all tools). |
 | `agent.js` | 1261 | **Core agent loop.** `Agent` class (extends EventEmitter). Holds conversation `messages[]`, calls LLM provider, processes tool calls in a loop. Contains the system prompt. Also has `parseToolCallsFromContent()` fallback for models that emit tool calls as JSON in text. |
 | `context.js` | 233 | **Project context gathering.** `gatherContext(cwd, contextSize)` builds a string with: working directory, project type detection, file tree (2 levels), git branch/status, AGENT.md excerpt, and loaded skills. Injected into the system prompt on first `run()`. |
 | `context-manager.js` | 704 | **Context window management.** Tracks token usage, prunes conversation history when approaching limits, truncates large tool results, and handles context overflow errors. |
@@ -95,7 +95,7 @@ Env vars: `SMOL_AGENT_PROVIDER`, `OPENAI_API_KEY`, `XAI_API_KEY`, `ANTHROPIC_API
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `App.js` | 204 | Ink (React) terminal UI. Manages message log, input field, spinner, ask_user flow. Uses `React.createElement` directly (no JSX). Subscribes to agent events. Handles `/clear`, `exit`/`quit`, `Ctrl-C`. Renders agent responses with rich markdown formatting. |
+| `App.js` | 204 | pi-tui terminal UI. Manages message log, input field, spinner, ask_user flow. Subscribes to agent events. Handles `/clear`, `exit`/`quit`, `Ctrl-C`. Renders agent responses with rich markdown formatting via chalk. |
 | `markdown.js` | 233 | Enhanced markdown renderer for terminal output. Converts markdown-style text to styled Text components with comprehensive support for headers, bold/italic text, inline code, code blocks, lists (ordered and unordered), blockquotes, links, and strikethrough formatting. |
 | `diff.js` | 305 | Diff visualization for file changes. Shows unified diffs with syntax highlighting. |
 
