@@ -6,6 +6,7 @@ import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import { loadSettings } from "./settings.js";
+import { listSessions, findSession } from "./sessions.js";
 import { cleanup as cleanupTiktoken } from "./token-estimator.js";
 import { execSync } from "node:child_process";
 
@@ -113,6 +114,10 @@ let jailDirectory = process.cwd();
 let allTools = undefined; // undefined = auto-detect from model size
 let autoApprove = false;
 let acpMode = false;
+let sessionId = undefined;      // --session <id> to resume
+let listSessionsFlag = false;   // --list-sessions
+let sessionName = undefined;    // --session-name <name> for new sessions
+let continueSession = false;    // --continue to resume the most recent session
 
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
@@ -133,6 +138,14 @@ for (let i = 0; i < args.length; i++) {
     autoApprove = true;
   } else if (a === "--acp") {
     acpMode = true;
+  } else if ((a === "--session" || a === "-s") && args[i + 1]) {
+    sessionId = args[++i];
+  } else if (a === "--continue" || a === "-c") {
+    continueSession = true;
+  } else if (a === "--session-name" && args[i + 1]) {
+    sessionName = args[++i];
+  } else if (a === "--list-sessions" || a === "--sessions") {
+    listSessionsFlag = true;
   } else if (a === "--self-update") {
     runSelfUpdate();
   } else if (a === "--help") {
@@ -161,8 +174,20 @@ Options:
       --self-update         Update smol-agent to the latest version
       --help                Show this help message
 
+Session Management:
+  -s, --session <id>        Resume a saved session by ID or name
+  -c, --continue            Resume the most recent session
+      --session-name <name> Name for the new session
+      --list-sessions       List all saved sessions
+      --sessions            Alias for --list-sessions
+
 Interactive Commands:
   /clear             Clear conversation history
+  /sessions          List saved sessions
+  /session save      Save the current session (with optional name)
+  /session load <id> Load a saved session
+  /session delete    Delete a saved session
+  /session rename    Rename a session
   /inspect           Dump current context to CONTEXT.md
   Ctrl+C             Cancel current operation (double-tap to exit)
   exit / quit        Exit the agent
@@ -191,6 +216,27 @@ function shouldUseCoreOnly(modelName) {
 
 const coreToolsOnly = shouldUseCoreOnly(model);
 
+// ── List sessions (non-interactive) ───────────────────────────────────
+if (listSessionsFlag) {
+  const sessions = await listSessions(jailDirectory);
+  if (sessions.length === 0) {
+    console.log("No saved sessions.");
+  } else {
+    console.log(`Saved sessions (${sessions.length}):\n`);
+    for (const s of sessions) {
+      const name = s.name ? ` "${s.name}"` : "";
+      const date = new Date(s.updatedAt).toLocaleString();
+      const msgs = s.messageCount || 0;
+      console.log(`  ${s.id}${name}  (${msgs} msgs, ${date})`);
+      if (s.summary) {
+        const summary = s.summary.length > 80 ? s.summary.slice(0, 77) + "..." : s.summary;
+        console.log(`    ${summary}`);
+      }
+    }
+  }
+  process.exit(0);
+}
+
 // ── ACP mode ──────────────────────────────────────────────────────────
 if (acpMode) {
   const { startACPServer } = await import("./acp-server.js");
@@ -209,6 +255,39 @@ if (acpMode) {
   const settings = await loadSettings(jailDirectory);
   if (autoApprove || settings.autoApprove) {
     agent._approveAll = true;
+  }
+
+  // ── Session handling ──
+  let resumedSession = false;
+
+  if (sessionId) {
+    // Resume a specific session by ID or name
+    const match = await findSession(jailDirectory, sessionId);
+    if (match) {
+      resumedSession = await agent.resumeSession(match.id);
+      if (!resumedSession) {
+        console.error(`Failed to load session: ${sessionId}`);
+        process.exit(1);
+      }
+    } else {
+      console.error(`Session not found: ${sessionId}`);
+      console.log("Use --list-sessions to see available sessions.");
+      process.exit(1);
+    }
+  } else if (continueSession) {
+    // Resume the most recent session
+    const sessions = await listSessions(jailDirectory);
+    if (sessions.length > 0) {
+      resumedSession = await agent.resumeSession(sessions[0].id);
+      if (!resumedSession) {
+        console.error("Failed to resume most recent session.");
+      }
+    }
+  }
+
+  // Start a new session if not resuming (always track sessions)
+  if (!resumedSession) {
+    agent.startSession(sessionName);
   }
 
   startApp(agent, promptText);
