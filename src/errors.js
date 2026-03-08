@@ -74,32 +74,44 @@ export function classifyError(err) {
  *
  * @param {Error} err
  * @param {string} [model] — model name, used in the 404 hint
+ * @param {string} [provider] — provider name (ollama, openai, groq, etc.)
  * @returns {string}
  */
-export function formatUserError(err, model) {
+export function formatUserError(err, model, provider = 'ollama') {
   if (!err) return 'Unknown error.';
 
+  const providerName = provider.charAt(0).toUpperCase() + provider.slice(1);
+
   if (err.code === 'ECONNREFUSED') {
-    return 'Cannot connect to Ollama. Is it running? Try: `ollama serve`';
+    if (provider === 'ollama') {
+      return 'Cannot connect to Ollama. Is it running? Try: `ollama serve`';
+    }
+    return `Cannot connect to ${providerName}. Check that the server is running.`;
   }
   if (err.code === 'ENOTFOUND' || err.code === 'EAI_AGAIN') {
-    return 'Cannot resolve Ollama host. Check OLLAMA_HOST.';
+    if (provider === 'ollama') {
+      return 'Cannot resolve Ollama host. Check OLLAMA_HOST.';
+    }
+    return `Cannot resolve ${providerName} host. Check the base URL.`;
   }
-  if (err.status === 429 || err.message?.includes('rate limit')) {
-    return 'Rate limited by Ollama.';
+  if (err.status === 429 || err.message?.toLowerCase().includes('rate limit')) {
+    return `Rate limited by ${providerName}. Wait a moment and try again.`;
   }
   if (err.status === 404) {
     const m = model || '<model>';
-    return `Model not found. Run: \`ollama pull ${m}\``;
+    if (provider === 'ollama') {
+      return `Model not found. Run: \`ollama pull ${m}\``;
+    }
+    return `Model not found: ${m}. Check that the model name is correct.`;
   }
   if (err.status >= 500 && err.status < 600) {
-    return `Ollama server error (${err.status}). The server may be overloaded.`;
+    return `${providerName} server error (${err.status}). The server may be overloaded.`;
   }
   if (err.code === 'ETIMEDOUT' || err.message?.includes('timeout') || err.message?.includes('deadline')) {
     return 'Request timed out. The model may be loading.';
   }
   if (err.code === 'ECONNRESET') {
-    return 'Connection reset by Ollama. The server may have restarted.';
+    return `Connection reset by ${providerName}. The server may have restarted.`;
   }
   if (isContextOverflowError(err)) {
     return 'Context limit exceeded — conversation is too long.';

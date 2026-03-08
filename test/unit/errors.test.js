@@ -4,7 +4,7 @@
  */
 
 import { describe, test, expect } from '@jest/globals';
-import { isContextOverflowError, classifyError } from '../../src/errors.js';
+import { isContextOverflowError, classifyError, formatUserError } from '../../src/errors.js';
 
 describe('isContextOverflowError', () => {
   test('detects "context length" error', () => {
@@ -146,5 +146,64 @@ describe('classifyError', () => {
 
   test('returns logic_error for undefined', () => {
     expect(classifyError(undefined)).toBe('logic_error');
+  });
+});
+
+describe('formatUserError', () => {
+  test('formats ECONNREFUSED for ollama', () => {
+    const err = new Error('connection refused');
+    err.code = 'ECONNREFUSED';
+    expect(formatUserError(err, 'llama3', 'ollama')).toBe('Cannot connect to Ollama. Is it running? Try: `ollama serve`');
+  });
+
+  test('formats ECONNREFUSED for other providers', () => {
+    const err = new Error('connection refused');
+    err.code = 'ECONNREFUSED';
+    expect(formatUserError(err, 'gpt-4o', 'openai')).toBe('Cannot connect to Openai. Check that the server is running.');
+  });
+
+  test('formats rate limit for ollama', () => {
+    const err = new Error('rate limit exceeded');
+    err.status = 429;
+    expect(formatUserError(err, 'llama3', 'ollama')).toBe('Rate limited by Ollama. Wait a moment and try again.');
+  });
+
+  test('formats rate limit for groq', () => {
+    const err = new Error('rate limit exceeded');
+    err.status = 429;
+    expect(formatUserError(err, 'llama-3.1-8b', 'groq')).toBe('Rate limited by Groq. Wait a moment and try again.');
+  });
+
+  test('formats 404 for ollama with model hint', () => {
+    const err = new Error('not found');
+    err.status = 404;
+    expect(formatUserError(err, 'llama3', 'ollama')).toBe('Model not found. Run: `ollama pull llama3`');
+  });
+
+  test('formats 404 for other providers', () => {
+    const err = new Error('not found');
+    err.status = 404;
+    expect(formatUserError(err, 'gpt-5', 'openai')).toBe('Model not found: gpt-5. Check that the model name is correct.');
+  });
+
+  test('formats 500 errors with provider name', () => {
+    const err = new Error('internal server error');
+    err.status = 500;
+    expect(formatUserError(err, 'claude-3', 'anthropic')).toBe('Anthropic server error (500). The server may be overloaded.');
+  });
+
+  test('defaults to ollama provider', () => {
+    const err = new Error('connection refused');
+    err.code = 'ECONNREFUSED';
+    expect(formatUserError(err, 'llama3')).toBe('Cannot connect to Ollama. Is it running? Try: `ollama serve`');
+  });
+
+  test('returns error message for unknown errors', () => {
+    const err = new Error('something weird happened');
+    expect(formatUserError(err, 'llama3', 'ollama')).toBe('something weird happened');
+  });
+
+  test('handles null error', () => {
+    expect(formatUserError(null)).toBe('Unknown error.');
   });
 });

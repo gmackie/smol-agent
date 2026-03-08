@@ -12,8 +12,11 @@ import {
   visibleWidth,
 } from "@mariozechner/pi-tui";
 import chalk from "chalk";
+import { createRequire } from "node:module";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+
+const require = createRequire(import.meta.url);
 import { execFile } from "node:child_process";
 import { setAskHandler } from "../tools/ask_user.js";
 import { formatDiff, formatReplaceDiff, formatNewFileDiff } from "./diff.js";
@@ -25,8 +28,22 @@ import {
   listSessions,
   findSession,
   deleteSession,
-  renameSession,
 } from "../sessions.js";
+
+// ═══ tree-sitter availability check ═══
+
+let _treeSitterAvailable = null;
+
+function isTreeSitterAvailable() {
+  if (_treeSitterAvailable !== null) return _treeSitterAvailable;
+  try {
+    require("tree-sitter");
+    _treeSitterAvailable = true;
+  } catch {
+    _treeSitterAvailable = false;
+  }
+  return _treeSitterAvailable;
+}
 
 // ═══ Loading animation (SMOL AGENT rain effect) ═══
 
@@ -510,6 +527,10 @@ export function startApp(agent, initialPrompt) {
     { name: "clear", description: "Clear conversation history" },
     { name: "sessions", description: "List saved sessions" },
     { name: "session", description: "Manage sessions (save/load/delete/rename)" },
+    { name: "architect", description: "Enable architect mode (plan before edit)" },
+    { name: "undo", description: "Rollback changes from the last agent run" },
+    { name: "checkpoints", description: "List available rollback checkpoints" },
+    { name: "approve", description: "Auto-approve a tool category (write/execute/network/all)" },
     { name: "inspect", description: "Dump context to file" },
     { name: "reload-skills", description: "Reload skills from global and local directories" },
     { name: "skills", description: "List available skills" },
@@ -573,6 +594,12 @@ export function startApp(agent, initialPrompt) {
     tui.addChild(chatView);
     tui.setFocus(chatView);
     tui.requestRender();
+
+    // Show warning if tree-sitter is not available
+    if (!isTreeSitterAvailable()) {
+      chatView.addLog(chalk.yellow("    ⎿  tree-sitter not installed — enhanced code analysis disabled"));
+      chatView.addLog(chalk.dim("       Install with: npm install tree-sitter tree-sitter-javascript tree-sitter-python"));
+    }
 
     if (initialPrompt) {
       submit(initialPrompt);
@@ -840,11 +867,92 @@ Reflect on these logs and determine if there's a skill worth creating. If the lo
       return;
     }
 
+    // /architect — enable architect mode for the next prompt
+    if (trimmed === "/architect" || trimmed.startsWith("/architect ")) {
+      const task = trimmed.slice("/architect".length).trim();
+      if (task) {
+        // /architect <task> — enable architect mode and run immediately
+        agent.setArchitectMode(true);
+        chatView.addLog(chalk.dim("    ⎿  Architect mode: analyzing codebase before making changes..."));
+        chatView.addLog("");
+        busy = true;
+        statusText = "architect analyzing...";
+        tui.requestRender();
+        try {
+          await agent.run(task);
+        } catch (err) {
+          chatView.addLog(chalk.red(` ✗ Architect failed: ${err.message}`));
+        } finally {
+          busy = false;
+          statusText = "";
+          tui.requestRender();
+        }
+      } else {
+        // /architect — toggle architect mode for next prompt
+        agent.setArchitectMode(!agent.architectMode);
+        const state = agent.architectMode ? "ON" : "OFF";
+        chatView.addLog(chalk.dim(`    ⎿  Architect mode: ${state}`));
+        if (agent.architectMode) {
+          chatView.addLog(chalk.dim("        Next prompt will analyze the codebase before making changes."));
+        }
+      }
+      return;
+    }
+
+    // /undo — rollback to the most recent checkpoint
+    if (trimmed === "/undo") {
+      const result = agent.undo();
+      if (result.restored) {
+        chatView.addLog(chalk.green(`    ⎿  ${result.message}`));
+      } else {
+        chatView.addLog(chalk.yellow(`    ⎿  Cannot undo: ${result.error}`));
+      }
+      updateContextBar();
+      return;
+    }
+
+    // /checkpoints — list available checkpoints
+    if (trimmed === "/checkpoints") {
+      const checkpoints = agent.getCheckpoints();
+      if (checkpoints.length === 0) {
+        chatView.addLog(chalk.dim("    ⎿  No checkpoints available."));
+      } else {
+        chatView.addLog(chalk.dim("    ⎿  Available checkpoints:"));
+        for (const cp of checkpoints) {
+          chatView.addLog(chalk.dim(`        [${cp.hash ? cp.hash.slice(0, 8) : "?"}] ${cp.message}`));
+        }
+        chatView.addLog(chalk.dim("        Use /undo to rollback to the most recent checkpoint."));
+      }
+      return;
+    }
+
+    // /approve <category> — auto-approve a tool category
+    if (trimmed.startsWith("/approve")) {
+      const category = trimmed.slice("/approve".length).trim();
+      const validCategories = ["write", "execute", "network", "all"];
+      if (!category || !validCategories.includes(category)) {
+        const current = [...agent.getApprovedCategories()].join(", ");
+        chatView.addLog(chalk.dim(`    ⎿  Auto-approved categories: ${current}`));
+        chatView.addLog(chalk.dim(`        Usage: /approve <${validCategories.join("|")}>`));
+        return;
+      }
+      if (category === "all") {
+        agent._approveAll = true;
+        chatView.addLog(chalk.dim("    ⎿  All tool calls auto-approved for this session."));
+      } else {
+        agent.approveCategory(category);
+        chatView.addLog(chalk.dim(`    ⎿  Auto-approve enabled for: ${category}`));
+      }
+      return;
+    }
+
     // Handle skill commands: /<skill-name> loads and executes the skill
     if (trimmed.startsWith("/") && !trimmed.startsWith("/model") && !trimmed.startsWith("/clear") &&
         !trimmed.startsWith("/inspect") && !trimmed.startsWith("/reload-skills") && !trimmed.startsWith("/exit") &&
         !trimmed.startsWith("/quit") && !trimmed.startsWith("/reflect") && !trimmed.startsWith("/skills") &&
-        !trimmed.startsWith("/session") && !trimmed.startsWith("/sessions")) {
+        !trimmed.startsWith("/session") && !trimmed.startsWith("/sessions") &&
+        !trimmed.startsWith("/architect") && !trimmed.startsWith("/undo") && !trimmed.startsWith("/checkpoints") &&
+        !trimmed.startsWith("/approve")) {
       const skillName = trimmed.slice(1).split(/\s+/)[0];
       
       // Check if this matches a skill
@@ -1029,7 +1137,7 @@ Reflect on these logs and determine if there's a skill worth creating. If the lo
     tui.requestRender();
   };
 
-  const onToolResult = ({ name, result }) => {
+  const onToolResult = ({ name: _name, result }) => {
     // Display a git-style diff for file editing tools
     if (result && result._display) {
       const d = result._display;

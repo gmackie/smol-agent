@@ -5,11 +5,8 @@ import { loadMemories } from "./tools/memory.js";
 import { loadContextDocs } from "./tools/context_docs.js";
 import { loadSkills } from "./skills.js";
 import { logger } from "./logger.js";
-
-const IGNORED = new Set([
-  "node_modules", ".git", "__pycache__", ".next", "dist", "build",
-  "target", ".venv", "venv", "coverage", ".smol-agent",
-]);
+import { buildRepoMap } from "./repo-map.js";
+import { loadMemoryBank } from "./memory-bank.js";
 
 /**
  * Gather lightweight project context for the system prompt.
@@ -28,9 +25,13 @@ export async function gatherContext(cwd, contextSize = 100) {
   const projectType = await detectProjectType(cwd);
   if (projectType) sections.push(`Project: ${projectType}`);
 
-  // 3. Brief file tree (top-level + one level into subdirs)
-  const tree = await topLevelTree(cwd);
-  if (tree.length > 0) sections.push(`Files:\n${tree.join("\n")}`);
+  // 3. Repository map — tree-sitter based symbol extraction (Aider pattern)
+  try {
+    const repoMap = await buildRepoMap(cwd, { maxTokens: 1500 });
+    if (repoMap) sections.push(repoMap);
+  } catch (err) {
+    logger.debug(`Repo map skipped: ${err.message}`);
+  }
 
   // 4. Git branch + uncommitted changes
   const git = gitInfo(cwd);
@@ -59,6 +60,12 @@ export async function gatherContext(cwd, contextSize = 100) {
       sections.push(`## Memories from previous sessions\n${memLines.join("\n")}${suffix}`);
     }
   } catch (err) { logger.debug(`No memories loaded: ${err.message}`); }
+
+  // 6b. Memory Bank — structured cross-session knowledge (Kilocode pattern)
+  try {
+    const memoryBank = await loadMemoryBank(cwd);
+    if (memoryBank) sections.push(memoryBank);
+  } catch (err) { logger.debug(`Memory bank skipped: ${err.message}`); }
 
   // 7. Codebase context docs from previous sessions
   const docs = await loadContextDocs(cwd);
@@ -105,35 +112,6 @@ async function detectProjectType(cwd) {
     } catch { /* not found */ }
   }
   return null;
-}
-
-async function topLevelTree(cwd) {
-  const entries = [];
-  try {
-    const items = await fs.readdir(cwd, { withFileTypes: true });
-    items.sort((a, b) => a.name.localeCompare(b.name));
-    for (const item of items) {
-      if (IGNORED.has(item.name) || item.name.startsWith(".")) continue;
-      if (item.isDirectory()) {
-        entries.push(`${item.name}/`);
-        try {
-          const sub = await fs.readdir(path.join(cwd, item.name), {
-            withFileTypes: true,
-          });
-          sub.sort((a, b) => a.name.localeCompare(b.name));
-          for (const s of sub.slice(0, 20)) {
-            if (IGNORED.has(s.name)) continue;
-            entries.push(`  ${s.isDirectory() ? s.name + "/" : s.name}`);
-          }
-          if (sub.length > 20)
-            entries.push(`  ... (${sub.length - 20} more)`);
-        } catch { /* can't read subdir */ }
-      } else {
-        entries.push(item.name);
-      }
-    }
-  } catch { /* can't read cwd */ }
-  return entries;
 }
 
 function gitInfo(cwd) {
