@@ -286,6 +286,40 @@ describe("OpenAICompatibleProvider._adaptMessagesForOpenAI()", () => {
     expect(result[0].tool_calls[0].id).toBe("existing_id");
     expect(result[1].tool_call_id).toBe("existing_id");
   });
+
+  test("stringifies tool call arguments for OpenAI-compatible APIs", () => {
+    const msgs = [
+      {
+        role: "assistant",
+        content: "",
+        tool_calls: [
+          { id: "call_1", function: { name: "read_file", arguments: { path: "/src/index.js" } } },
+          { id: "call_2", function: { name: "write_file", arguments: {} } },
+        ],
+      },
+      { role: "tool", content: "result" },
+    ];
+    const result = provider._adaptMessagesForOpenAI(msgs);
+    // Arguments must be JSON strings for OpenAI-compatible APIs (Groq, OpenAI, etc.)
+    expect(result[0].tool_calls[0].function.arguments).toBe('{"path":"/src/index.js"}');
+    expect(result[0].tool_calls[1].function.arguments).toBe('{}');
+    // Should also include type: "function"
+    expect(result[0].tool_calls[0].type).toBe("function");
+  });
+
+  test("handles arguments that are already strings", () => {
+    const msgs = [
+      {
+        role: "assistant",
+        content: "",
+        tool_calls: [{ id: "call_1", function: { name: "read_file", arguments: '{"path":"/src/index.js"}' } }],
+      },
+      { role: "tool", content: "result" },
+    ];
+    const result = provider._adaptMessagesForOpenAI(msgs);
+    // Should pass through string arguments unchanged
+    expect(result[0].tool_calls[0].function.arguments).toBe('{"path":"/src/index.js"}');
+  });
 });
 
 // ── AnthropicProvider._headers ────────────────────────────────────────────────

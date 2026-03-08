@@ -1,7 +1,7 @@
 # smol-agent
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org/)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen)](https://nodejs.org/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 A small coding agent that runs in your terminal, powered by [Ollama](https://ollama.com) for local LLM hosting.
@@ -84,73 +84,23 @@ This makes agent responses much easier to read and understand at a glance.
 
 ## Prerequisites
 
-- **Node.js** >= 18
-- **Ollama** running locally (default `http://127.0.0.1:11434`)
-- A model pulled in Ollama — the default is `qwen2.5-coder:32b`:
-  ```
-  ollama pull qwen2.5-coder:32b
-  ```
-  > **Note**: For machines with limited RAM, `qwen2.5-coder:7b` or `qwen3-coder:14b` work well too.
-- An [Ollama API key](https://ollama.com/settings/keys) (free) — required for `web_search` and `web_fetch` tools. Set it as `OLLAMA_API_KEY` in your environment:
-  ```
-  export OLLAMA_API_KEY=your-key-here
-  ```
+- **Node.js** >= 20.0.0
+- **Ollama** running locally (default `http://127.0.0.1:11434`) **OR** API access to OpenAI, Anthropic, or Grok
 
-### Running Ollama as a systemd Service (Linux)
+### Setting up Ollama
 
-To run Ollama as a background service on Linux:
+If using Ollama (the default provider):
 
-1. Create a systemd unit file at `/etc/systemd/system/ollama.service`:
-
-   ```ini
-   [Unit]
-   Description=Ollama Service
-   After=network.target
-
-   [Service]
-   Type=simple
-   User=ollama
-   Group=ollama
-   ExecStart=/usr/local/bin/ollama serve
-   Restart=always
-   RestartSec=3
-   Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-
-   [Install]
-   WantedBy=multi-user.target
+1. Install Ollama from [ollama.com](https://ollama.com)
+2. Pull a model:
    ```
-
-2. Create the ollama user (if not already created by the installer):
-
-   ```bash
-   sudo useradd -r -s /bin/false -m -d /usr/share/ollama ollama
+   ollama pull qwen2.5-coder:32b
    ```
-
-3. Enable and start the service:
-
-   ```bash
-   sudo systemctl daemon-reload
-   sudo systemctl enable ollama
-   sudo systemctl start ollama
+   > **Note**: For machines with limited RAM, `qwen2.5-coder:7b` or `qwen3-coder:14b` work well too.
+3. (Optional) Get an [Ollama API key](https://ollama.com/settings/keys) for `web_search` and `web_fetch` tools:
    ```
-
-4. Verify it's running:
-
-   ```bash
-   sudo systemctl status ollama
-   ollama list  # should list your pulled models
+   export OLLAMA_API_KEY=your-key-here
    ```
-
-**Optional configuration** (add to the `[Service]` section):
-
-- Set custom model storage: `Environment="OLLAMA_MODELS=/var/lib/ollama/models"`
-- Limit GPU access: `Environment="CUDA_VISIBLE_DEVICES=0"`
-- Expose to network: `Environment="OLLAMA_HOST=0.0.0.0:11434"`
-
-## Prerequisites
-
-- **Node.js** >= 18.0.0
-- **Ollama** (for local LLMs) or API access to OpenAI, Anthropic, or Grok
 
 ### Optional: tree-sitter (for enhanced code analysis)
 
@@ -257,8 +207,10 @@ smol-agent "add input validation to src/api.js"
 
 | Flag | Description |
 |------|-------------|
-| `-m, --model <name>` | Ollama model to use (default: `qwen2.5-coder:32b`) |
-| `-H, --host <url>` | Ollama server URL (default: `http://127.0.0.1:11434`) |
+| `-m, --model <name>` | Model to use (default depends on provider) |
+| `-p, --provider <name>` | LLM provider: `ollama`, `openai`, `anthropic`, `grok` (default: `ollama`) |
+| `-H, --host <url>` | Provider host/base URL (default: provider-specific) |
+| `--api-key <key>` | API key for cloud providers (or use env vars) |
 | `-d, --directory <path>` | Set working directory and jail boundary (default: cwd) |
 | `--all-tools` | Expose all tools (auto-detected for 30B+ models) |
 | `--auto-approve` | Skip approval prompts for write/command tools (alias: `--yolo`) |
@@ -268,6 +220,26 @@ smol-agent "add input validation to src/api.js"
 | `--self-update` | Update smol-agent to the latest version |
 | `--help` | Show help |
 
+### Session Management
+
+| Flag | Description |
+|------|-------------|
+| `-s, --session <id>` | Resume a saved session by ID or name |
+| `-c, --continue` | Resume the most recent session |
+| `--session-name <name>` | Name for the new session |
+| `--list-sessions` | List all saved sessions |
+
+### Providers
+
+| Provider | Description | API Key Env Var |
+|----------|-------------|-----------------|
+| `ollama` | Local LLMs via Ollama (default) | None (optional: `OLLAMA_API_KEY` for web tools) |
+| `openai` | OpenAI API | `OPENAI_API_KEY` |
+| `anthropic` | Anthropic Claude API | `ANTHROPIC_API_KEY` |
+| `grok` | xAI Grok API | `XAI_API_KEY` |
+| `groq` | Groq API (fast inference) | `GROQ_API_KEY` |
+| `gemini` | Google Gemini API | `GEMINI_API_KEY` |
+
 ### Commands (interactive mode)
 
 | Command | Description |
@@ -275,6 +247,11 @@ smol-agent "add input validation to src/api.js"
 | `/clear` | Clear conversation history |
 | `/model <name>` | Switch to a different model |
 | `/model list` | List available models |
+| `/sessions` | List saved sessions |
+| `/session save [name]` | Save the current session (with optional name) |
+| `/session load <id>` | Load a saved session |
+| `/session delete <id>` | Delete a saved session |
+| `/session rename <id> <name>` | Rename a session |
 | `/inspect` | Dump current context to CONTEXT.md |
 | `/reload-skills` | Reload skills from global and local directories |
 | `/skills` | List available skills |

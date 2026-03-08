@@ -308,14 +308,16 @@ export class Agent extends EventEmitter {
 
     // Set the global jail directory for all tools
     registry.setJailDirectory(this.jailDirectory);
-
     // Expose client for backward-compatibility (e.g. TUI calls listModels(agent.client))
     this.client = this.llmProvider.client || null;
 
-    // Set up Ollama client for web search/fetch if using the Ollama provider
-    if (this.llmProvider.client) {
-      setSearchClient(this.llmProvider.client);
-      setFetchClient(this.llmProvider.client);
+    // Set up Ollama client for web search/fetch
+    // Always try to initialize, even when using other providers (OpenAI, Anthropic, etc.)
+    // This allows web search/fetch to work with any provider if Ollama is running locally
+    const ollamaClient = this.llmProvider.client || this._createOllamaClient();
+    if (ollamaClient) {
+      setSearchClient(ollamaClient);
+      setFetchClient(ollamaClient);
     }
 
     // Set up LLM-based summarization if model is large enough (has all tools)
@@ -323,13 +325,28 @@ export class Agent extends EventEmitter {
       this.contextManager.setLLMProvider(this.llmProvider);
     }
 
-
     // Always configure sub-agent for delegation (share parent's provider)
     setSubAgentConfig({
       llmProvider: this.llmProvider,
       maxTokens: this.maxTokens,
       cwd: this.jailDirectory,
     });
+  }
+
+  /**
+   * Create an Ollama client for web search/fetch.
+   * Returns null if Ollama is not available.
+   */
+  _createOllamaClient() {
+    try {
+      const host = process.env.OLLAMA_HOST || "http://127.0.0.1:11434";
+      // Use the Ollama class from the ollama package
+      const { Ollama } = require("ollama");
+      return new Ollama({ host });
+    } catch {
+      // Ollama package not available or import failed
+      return null;
+    }
   }
 
   /**
@@ -618,7 +635,7 @@ export class Agent extends EventEmitter {
 
     // Retry callback — emits events for UI feedback
     const onRetry = ({ attempt, maxRetries, error, delayMs }) => {
-      const msg = formatUserError(error, this.model);
+      const msg = formatUserError(error, this.model, this.llmProvider?.name);
       logger.warn(`Retry ${attempt}/${maxRetries}: ${msg} (waiting ${Math.round(delayMs)}ms)`);
       this.emit("retry", { attempt, maxRetries, message: msg, delayMs });
     };
@@ -725,7 +742,7 @@ export class Agent extends EventEmitter {
 
             // Only retry transient errors
             if (streamAttempt < MAX_STREAM_RETRIES && classifyError(streamErr) === 'transient') {
-              const msg = formatUserError(streamErr, this.model);
+              const msg = formatUserError(streamErr, this.model, this.llmProvider?.name);
               logger.warn(`Mid-stream error, retrying (attempt ${streamAttempt + 1}/${MAX_STREAM_RETRIES}): ${msg}`);
               this.abortController = new AbortController();
               this.emit("retry", { attempt: streamAttempt + 1, maxRetries: MAX_STREAM_RETRIES, message: msg, delayMs: 1000 });
@@ -1026,7 +1043,7 @@ export class Agent extends EventEmitter {
         // ── Agent-level retry for transient errors ──
         if (classifyError(err) === 'transient' && consecutiveAgentRetries < MAX_AGENT_RETRIES) {
           consecutiveAgentRetries++;
-          const msg = formatUserError(err, this.model);
+          const msg = formatUserError(err, this.model, this.llmProvider?.name);
           logger.warn(`Agent-level retry ${consecutiveAgentRetries}/${MAX_AGENT_RETRIES}: ${msg}`);
           this.abortController = new AbortController();
           this.emit("retry", { attempt: consecutiveAgentRetries, maxRetries: MAX_AGENT_RETRIES, message: msg, delayMs: 2000 });
@@ -1072,7 +1089,7 @@ export class Agent extends EventEmitter {
         // Non-recoverable error
         this.running = false;
         this.abortController = null;
-        const userMsg = formatUserError(err, this.model);
+        const userMsg = formatUserError(err, this.model, this.llmProvider?.name);
         this.emit("error", new Error(userMsg));
         throw err;
       }

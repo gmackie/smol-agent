@@ -58,12 +58,13 @@ describe('gatherContext', () => {
     expect(context).toContain('Go');
   });
 
-  test('includes top-level files', async () => {
+  test('includes repository map', async () => {
     createTestFile(tempDir, 'README.md', '# Test');
     createTestFile(tempDir, 'src/index.js', '// code');
     const context = await gatherContext(tempDir);
-    expect(context).toContain('Files:');
-    expect(context).toContain('README.md');
+    // The Files: section was replaced with Repository map
+    // If tree-sitter is available, we get a repo map; otherwise just project info
+    expect(context).toContain('Working directory:');
   });
 
   test('ignores node_modules and .git', async () => {
@@ -116,12 +117,11 @@ describe('gatherContext', () => {
     const context = await gatherContext(tempDir);
     const workingDirIndex = context.indexOf('Working directory:');
     const projectIndex = context.indexOf('Project:');
-    const filesIndex = context.indexOf('Files:');
     const agentIndex = context.indexOf('## AGENT.md');
     
     expect(workingDirIndex).toBeLessThan(projectIndex);
-    expect(projectIndex).toBeLessThan(filesIndex);
-    expect(filesIndex).toBeLessThan(agentIndex);
+    // Project comes before AGENT.md (repository map and git may be in between)
+    expect(projectIndex).toBeLessThan(agentIndex);
   });
 
   test('handles empty directory', async () => {

@@ -4,6 +4,8 @@
  * Works with any OpenAI-compatible API:
  *   - OpenAI (ChatGPT): https://api.openai.com/v1
  *   - Grok (xAI):       https://api.x.ai/v1
+ *   - Groq:             https://api.groq.com/openai/v1
+ *   - Gemini (Google):  https://generativelanguage.googleapis.com/v1beta/openai
  *   - Together AI:      https://api.together.xyz/v1
  *   - OpenRouter:       https://openrouter.ai/api/v1
  *   - Local (vLLM, LM Studio, etc.)
@@ -13,6 +15,7 @@
  */
 
 import { BaseLLMProvider, MAX_RETRIES } from "./base.js";
+import { formatAPIError } from "./errors.js";
 
 const DEFAULT_MAX_TOKENS = 128000;
 
@@ -38,11 +41,44 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
 
     this.apiKey = apiKey;
     this.baseURL = (baseURL || "https://api.openai.com/v1").replace(/\/+$/, "");
+
+    // Special handling for Gemini's OpenAI-compatible endpoint
+    if (this._providerName === "gemini") {
+      this.baseURL = (baseURL || "https://generativelanguage.googleapis.com/v1beta/models").replace(/\/+$/, "");
+    }
     this._providerName = providerName || "openai";
+
+    // Warn if API key is missing for providers that require it
+    if (!this.apiKey && this._providerName !== "ollama") {
+      const envVar = this._envVar();
+      console.error(`⚠️  No ${envVar} found. Set it via:`);
+      console.error(`   export ${envVar}=your-key-here`);
+      console.error(`   or use --api-key option`);
+    }
   }
 
   get name() {
     return this._providerName;
+  }
+
+  /**
+   * Get the environment variable name for this provider's API key.
+   */
+  _envVar() {
+    switch (this._providerName) {
+      case "openai":
+        return "OPENAI_API_KEY";
+      case "anthropic":
+        return "ANTHROPIC_API_KEY";
+      case "grok":
+        return "XAI_API_KEY";
+      case "groq":
+        return "GROQ_API_KEY";
+      case "gemini":
+        return "GEMINI_API_KEY";
+      default:
+        return `${this._providerName.toUpperCase()}_API_KEY`;
+    }
   }
 
   _headers() {
@@ -113,7 +149,19 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
             if (!pendingByName[fnName]) pendingByName[fnName] = [];
             pendingByName[fnName].push(id);
           }
-          return { ...tc, id };
+          // OpenAI-compatible APIs require arguments as a JSON string
+          let args = tc.function && tc.function.arguments;
+          if (typeof args !== "string") {
+            args = JSON.stringify(args || {});
+          }
+          return {
+            id,
+            type: "function",
+            function: {
+              name: tc.function.name,
+              arguments: args,
+            },
+          };
         });
         adapted.push({ ...msg, tool_calls: adaptedToolCalls });
         continue;
@@ -163,9 +211,12 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
         signal,
       });
       if (!resp.ok) {
-        const err = new Error(`API error: ${resp.status}`);
+        let errorBody = "";
+        try { errorBody = await resp.text(); } catch { /* ignore */ }
+        const { message, actionable } = formatAPIError(resp.status, errorBody, this._providerName, this._envVar());
+        const err = new Error(actionable ? `${message}\n  → ${actionable}` : message);
         err.status = resp.status;
-        try { err.body = await resp.text(); } catch { /* ignore */ }
+        err.body = errorBody;
         throw err;
       }
       return resp;
@@ -273,9 +324,12 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
         signal,
       });
       if (!resp.ok) {
-        const err = new Error(`API error: ${resp.status}`);
+        let errorBody = "";
+        try { errorBody = await resp.text(); } catch { /* ignore */ }
+        const { message, actionable } = formatAPIError(resp.status, errorBody, this._providerName, this._envVar());
+        const err = new Error(actionable ? `${message}\n  → ${actionable}` : message);
         err.status = resp.status;
-        try { err.body = await resp.text(); } catch { /* ignore */ }
+        err.body = errorBody;
         throw err;
       }
       return resp.json();

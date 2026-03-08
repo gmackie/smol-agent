@@ -14,6 +14,7 @@
  */
 
 import { BaseLLMProvider, MAX_RETRIES } from "./base.js";
+import { formatAPIError } from "./errors.js";
 
 const DEFAULT_MAX_TOKENS = 8192; // Anthropic max output tokens
 
@@ -38,6 +39,12 @@ export class AnthropicProvider extends BaseLLMProvider {
 
     this.apiKey = apiKey;
     this.baseURL = (baseURL || "https://api.anthropic.com").replace(/\/+$/, "");
+
+    if (!this.apiKey) {
+      console.error("⚠️  No ANTHROPIC_API_KEY found. Set it via:");
+      console.error("   export ANTHROPIC_API_KEY=your-key-here");
+      console.error("   or use --api-key option");
+    }
   }
 
   get name() {
@@ -53,6 +60,14 @@ export class AnthropicProvider extends BaseLLMProvider {
       headers["x-api-key"] = this.apiKey;
     }
     return headers;
+  }
+
+  /**
+   * Format a user-friendly error message based on HTTP status code.
+   */
+  _formatError(status, body = "") {
+    const { message, actionable } = formatAPIError(status, body, "Anthropic", "ANTHROPIC_API_KEY");
+    return actionable ? `${message}\n  → ${actionable}` : message;
   }
 
   /**
@@ -219,9 +234,11 @@ export class AnthropicProvider extends BaseLLMProvider {
         signal,
       });
       if (!resp.ok) {
-        const err = new Error(`Anthropic API error: ${resp.status}`);
+        let errorBody = "";
+        try { errorBody = await resp.text(); } catch { /* ignore */ }
+        const err = new Error(this._formatError(resp.status, errorBody));
         err.status = resp.status;
-        try { err.body = await resp.text(); } catch { /* ignore */ }
+        err.body = errorBody;
         throw err;
       }
       return resp;
@@ -331,9 +348,11 @@ export class AnthropicProvider extends BaseLLMProvider {
         signal,
       });
       if (!resp.ok) {
-        const err = new Error(`Anthropic API error: ${resp.status}`);
+        let errorBody = "";
+        try { errorBody = await resp.text(); } catch { /* ignore */ }
+        const err = new Error(this._formatError(resp.status, errorBody));
         err.status = resp.status;
-        try { err.body = await resp.text(); } catch { /* ignore */ }
+        err.body = errorBody;
         throw err;
       }
       return resp.json();

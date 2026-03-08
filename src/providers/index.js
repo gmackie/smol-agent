@@ -5,6 +5,8 @@
  *   --provider ollama    → OllamaProvider (default, local)
  *   --provider openai    → OpenAICompatibleProvider (api.openai.com)
  *   --provider grok      → OpenAICompatibleProvider (api.x.ai)
+ *   --provider groq      → OpenAICompatibleProvider (api.groq.com)
+ *   --provider gemini    → OpenAICompatibleProvider (generativelanguage.googleapis.com)
  *   --provider anthropic → AnthropicProvider (api.anthropic.com)
  *   --provider <url>     → OpenAICompatibleProvider (custom base URL)
  *
@@ -12,6 +14,8 @@
  *   SMOL_AGENT_PROVIDER     — default provider name
  *   OPENAI_API_KEY          — for openai provider
  *   XAI_API_KEY             — for grok provider
+ *   GROQ_API_KEY            — for groq provider
+ *   GEMINI_API_KEY          — for gemini provider
  *   ANTHROPIC_API_KEY       — for anthropic provider
  */
 
@@ -43,6 +47,32 @@ const PROVIDER_PRESETS = {
     }),
     defaultModel: "grok-3",
     envKey: "XAI_API_KEY",
+  },
+  groq: {
+    factory: (opts) => new OpenAICompatibleProvider({
+      ...opts,
+      baseURL: opts.baseURL || "https://api.groq.com/openai/v1",
+      providerName: "groq",
+      // Groq rate limits (Free tier): 30 RPM, 6K-30K TPM depending on model
+      // Developer tier has higher limits. Adjust as needed.
+      rateLimitConfig: opts.rateLimitConfig || {
+        requestsPerMinute: 30,
+        requestsPerSecond: 1,
+        maxConcurrent: 1,
+        rateLimitBackoffMs: 5000,
+      },
+    }),
+    defaultModel: "openai/gpt-oss-120b",
+    envKey: "GROQ_API_KEY",
+  },
+  gemini: {
+    factory: (opts) => new OpenAICompatibleProvider({
+      ...opts,
+      baseURL: opts.baseURL || "https://generativelanguage.googleapis.com/v1beta/openai",
+      providerName: "gemini",
+    }),
+    defaultModel: "gemini-2.5-pro",
+    envKey: "GEMINI_API_KEY",
   },
   anthropic: {
     factory: (opts) => new AnthropicProvider(opts),

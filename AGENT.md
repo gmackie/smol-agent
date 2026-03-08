@@ -13,20 +13,33 @@ node src/index.js    # direct run
 node src/index.js -m <model> "prompt here"  # one-shot with specific model
 node src/index.js -d ./my-project "prompt"  # run in a specific directory
 node src/index.js --all-tools "prompt"      # expose all tools (for smaller models)
+npm test             # run unit tests (Jest)
+npm run test:e2e     # run end-to-end tests
 ```
 
-No test suite exists yet. No build step — plain ES modules (Node >= 18).
+No build step — plain ES modules (Node >= 20).
 
 ### CLI Options
 
 | Option | Description |
 |--------|-------------|
-| `-m, --model <name>` | Ollama model to use (default: qwen2.5-coder:32b) |
-| `-H, --host <url>` | Ollama server URL (default: http://127.0.0.1:11434) |
-| `-c, --context-size <num>` | Max lines for AGENT.md snippet (default: 100) |
+| `-m, --model <name>` | Model to use (default depends on provider) |
+| `-p, --provider <name>` | LLM provider: `ollama`, `openai`, `anthropic`, `grok`, `groq`, `gemini` (default: `ollama`) |
+| `-H, --host <url>` | Provider host/base URL (default: provider-specific) |
+| `--api-key <key>` | API key for cloud providers (or use env vars) |
 | `-d, --directory <path>` | Set working directory and jail boundary (default: cwd) |
 | `--all-tools` | Expose all tools (auto-detected for 30B+ models) |
+| `--auto-approve` | Skip approval prompts for write/command tools (alias: `--yolo`) |
+| `--approve-writes` | Auto-approve file write operations only |
+| `--approve-execute` | Auto-approve command execution only |
+| `-s, --session <id>` | Resume a saved session by ID or name |
+| `-c, --continue` | Resume the most recent session |
+| `--list-sessions` | List all saved sessions |
+| `--acp` | Run as ACP (Agent Client Protocol) server over stdio |
 | `--help` | Show help message |
+
+Providers: `ollama` (default), `openai`, `anthropic`, `grok`, `groq`, `gemini`
+Env vars: `SMOL_AGENT_PROVIDER`, `OPENAI_API_KEY`, `XAI_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`
 
 ## Architecture overview
 
@@ -42,15 +55,15 @@ The agent is an EventEmitter that drives a loop: send messages to the LLM provid
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `index.js` | 113 | CLI entry point. Parses args, creates provider via `createProvider()`, creates `Agent`, renders Ink `App`. Auto-detects tool exposure based on model size (30B+ gets all tools). |
-| `agent.js` | 465 | **Core agent loop.** `Agent` class (extends EventEmitter). Holds conversation `messages[]`, calls LLM provider, processes tool calls in a loop. Contains the system prompt. Also has `parseToolCallsFromContent()` fallback for models that emit tool calls as JSON in text. |
-| `context.js` | 126 | **Project context gathering.** `gatherContext(cwd, contextSize)` builds a string with: working directory, project type detection, file tree (2 levels), git branch/status, AGENT.md excerpt, and loaded skills. Injected into the system prompt on first `run()`. |
-| `context-manager.js` | 303 | **Context window management.** Tracks token usage, prunes conversation history when approaching limits, truncates large tool results, and handles context overflow errors. |
+| `index.js` | 327 | CLI entry point. Parses args, creates provider via `createProvider()`, creates `Agent`, renders Ink `App`. Auto-detects tool exposure based on model size (30B+ gets all tools). |
+| `agent.js` | 1261 | **Core agent loop.** `Agent` class (extends EventEmitter). Holds conversation `messages[]`, calls LLM provider, processes tool calls in a loop. Contains the system prompt. Also has `parseToolCallsFromContent()` fallback for models that emit tool calls as JSON in text. |
+| `context.js` | 233 | **Project context gathering.** `gatherContext(cwd, contextSize)` builds a string with: working directory, project type detection, file tree (2 levels), git branch/status, AGENT.md excerpt, and loaded skills. Injected into the system prompt on first `run()`. |
+| `context-manager.js` | 704 | **Context window management.** Tracks token usage, prunes conversation history when approaching limits, truncates large tool results, and handles context overflow errors. |
 | `context-summarizer.js` | 216 | LLM-based summarization for context compression. Used by ContextManager for intelligent message summarization. |
-| `ollama.js` | 266 | Ollama API wrapper with streaming, rate limiting, and retry logic. Exports `createClient(host)`, `chatStream()`, `chatWithRetry()`, and `DEFAULT_MODEL`. |
-| `errors.js` | 64 | Shared error classification. `isContextOverflowError()` detects context limit errors. `classifyError()` categorizes errors as transient/model_error/logic_error for retry logic. |
-| `logger.js` | 159 | File-based logging to `.smol-agent/state/agent.log`. Log levels (debug/info/warn/error), controlled by `SMOL_AGENT_LOG_LEVEL` env var. |
-| `path-utils.js` | 43 | Path validation utilities. `resolveJailedPath()` and `validateJailedPath()` ensure file operations stay within the jail directory. |
+| `ollama.js` | 55 | Ollama API wrapper with streaming. Exports `createClient(host)`, `chatStream()`, `chatWithRetry()`. |
+| `errors.js` | 109 | Shared error classification. `isContextOverflowError()` detects context limit errors. `classifyError()` categorizes errors as transient/model_error/logic_error for retry logic. |
+| `logger.js` | 178 | File-based logging to `.smol-agent/state/agent.log`. Log levels (debug/info/warn/error), controlled by `SMOL_AGENT_LOG_LEVEL` env var. |
+| `path-utils.js` | 86 | Path validation utilities. `resolveJailedPath()` and `validateJailedPath()` ensure file operations stay within the jail directory. |
 | `token-estimator.js` | 200 | Token counting utilities. Estimates tokens when provider doesn't return counts. Used by context management. |
 | `tool-call-parser.js` | 96 | Parses tool calls from LLM responses. Handles both native tool_calls and JSON-in-text fallback. |
 | `prehydrate.js` | 135 | Pre-generates context for first message. Speeds up initial response by computing file tree, repo map, etc. ahead of time. |
