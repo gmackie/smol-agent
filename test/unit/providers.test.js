@@ -131,8 +131,8 @@ describe("getDefaultModel()", () => {
     expect(getDefaultModel("openai")).toBe("gpt-4o");
   });
 
-  test("returns grok-3 for grok", () => {
-    expect(getDefaultModel("grok")).toBe("grok-3");
+  test("returns grok-4-latest for grok", () => {
+    expect(getDefaultModel("grok")).toBe("grok-4-latest");
   });
 });
 
