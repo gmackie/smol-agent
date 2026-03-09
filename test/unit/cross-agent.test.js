@@ -2,36 +2,48 @@ import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import {
-  serializeLetter,
-  serializeResponse,
-  parseLetter,
-  sendLetter,
-  sendReply,
-  checkForReply,
-  readInbox,
-  readOutbox,
-  clearStaleInbox,
-} from "../../src/cross-agent.js";
+
+// We need dynamic imports so modules pick up the XDG_CONFIG_HOME override
+let tmpConfig;
+let repoA;
+let repoB;
+
+// Helper to load modules with cache-busting
+async function loadModules() {
+  const ts = Date.now();
+  const registry = await import(`../../src/agent-registry.js?t=${ts}`);
+  const crossAgent = await import(`../../src/cross-agent.js?t=${ts}`);
+  return { registry, crossAgent };
+}
 
 describe("cross-agent protocol", () => {
-  let repoA; // "frontend" repo
-  let repoB; // "backend" repo
+  let mods;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    tmpConfig = fs.mkdtempSync(path.join(os.tmpdir(), "cross-agent-config-"));
     repoA = fs.mkdtempSync(path.join(os.tmpdir(), "cross-agent-a-"));
     repoB = fs.mkdtempSync(path.join(os.tmpdir(), "cross-agent-b-"));
+    process.env.XDG_CONFIG_HOME = tmpConfig;
+
+    mods = await loadModules();
+
+    // Register both repos so path validation passes
+    mods.registry.registerAgent({ repoPath: repoA, name: "repo-a" });
+    mods.registry.registerAgent({ repoPath: repoB, name: "repo-b" });
   });
 
   afterEach(() => {
+    delete process.env.XDG_CONFIG_HOME;
     fs.rmSync(repoA, { recursive: true, force: true });
     fs.rmSync(repoB, { recursive: true, force: true });
+    fs.rmSync(tmpConfig, { recursive: true, force: true });
   });
 
   // ── Serialization / Parsing ───────────────────────────────────────
 
   describe("serializeLetter / parseLetter", () => {
     it("round-trips a request letter", () => {
+      const { serializeLetter, parseLetter } = mods.crossAgent;
       const letter = {
         id: "test-uuid-123",
         type: "request",
@@ -81,6 +93,7 @@ describe("cross-agent protocol", () => {
     });
 
     it("handles empty acceptance criteria", () => {
+      const { serializeLetter, parseLetter } = mods.crossAgent;
       const markdown = serializeLetter({
         id: "test-id",
         title: "Test",
@@ -95,6 +108,7 @@ describe("cross-agent protocol", () => {
     });
 
     it("handles empty context", () => {
+      const { serializeLetter, parseLetter } = mods.crossAgent;
       const markdown = serializeLetter({
         id: "test-id",
         title: "Test",
@@ -111,6 +125,7 @@ describe("cross-agent protocol", () => {
 
   describe("serializeResponse / parseLetter (response)", () => {
     it("round-trips a response letter", () => {
+      const { serializeResponse, parseLetter } = mods.crossAgent;
       const response = {
         id: "response-uuid-456",
         title: "Add avatar field to GET /users",
@@ -148,6 +163,7 @@ describe("cross-agent protocol", () => {
     });
 
     it("normalizes (none) to empty string", () => {
+      const { serializeResponse, parseLetter } = mods.crossAgent;
       const markdown = serializeResponse({
         id: "r1",
         title: "Test",
@@ -172,6 +188,7 @@ describe("cross-agent protocol", () => {
 
   describe("sendLetter", () => {
     it("writes letter to recipient inbox and sender outbox", () => {
+      const { sendLetter, parseLetter } = mods.crossAgent;
       const result = sendLetter({
         from: repoA,
         to: repoB,
@@ -205,6 +222,7 @@ describe("cross-agent protocol", () => {
     });
 
     it("throws if target repo does not exist", () => {
+      const { sendLetter } = mods.crossAgent;
       expect(() =>
         sendLetter({
           from: repoA,
@@ -212,12 +230,47 @@ describe("cross-agent protocol", () => {
           title: "Test",
           body: "Test",
         }),
-      ).toThrow("Target repo does not exist");
+      ).toThrow("Unregistered");
+    });
+
+    it("rejects unregistered recipient", () => {
+      const { sendLetter } = mods.crossAgent;
+      const unregistered = fs.mkdtempSync(path.join(os.tmpdir(), "unregistered-"));
+      try {
+        expect(() =>
+          sendLetter({
+            from: repoA,
+            to: unregistered,
+            title: "Test",
+            body: "Test",
+          }),
+        ).toThrow("Unregistered recipient");
+      } finally {
+        fs.rmSync(unregistered, { recursive: true, force: true });
+      }
+    });
+
+    it("rejects unregistered sender", () => {
+      const { sendLetter } = mods.crossAgent;
+      const unregistered = fs.mkdtempSync(path.join(os.tmpdir(), "unregistered-"));
+      try {
+        expect(() =>
+          sendLetter({
+            from: unregistered,
+            to: repoB,
+            title: "Test",
+            body: "Test",
+          }),
+        ).toThrow("Unregistered sender");
+      } finally {
+        fs.rmSync(unregistered, { recursive: true, force: true });
+      }
     });
   });
 
   describe("readInbox / readOutbox", () => {
     it("reads incoming letters", () => {
+      const { sendLetter, readInbox } = mods.crossAgent;
       sendLetter({
         from: repoA,
         to: repoB,
@@ -240,6 +293,7 @@ describe("cross-agent protocol", () => {
     });
 
     it("filters by type", () => {
+      const { sendLetter, readInbox } = mods.crossAgent;
       sendLetter({
         from: repoA,
         to: repoB,
@@ -255,6 +309,7 @@ describe("cross-agent protocol", () => {
     });
 
     it("filters by status", () => {
+      const { sendLetter, readInbox } = mods.crossAgent;
       sendLetter({
         from: repoA,
         to: repoB,
@@ -270,6 +325,7 @@ describe("cross-agent protocol", () => {
     });
 
     it("reads outgoing letters", () => {
+      const { sendLetter, readOutbox } = mods.crossAgent;
       sendLetter({
         from: repoA,
         to: repoB,
@@ -283,6 +339,7 @@ describe("cross-agent protocol", () => {
     });
 
     it("returns empty for repos with no inbox", () => {
+      const { readInbox, readOutbox } = mods.crossAgent;
       expect(readInbox(repoA)).toEqual([]);
       expect(readOutbox(repoA)).toEqual([]);
     });
@@ -290,6 +347,7 @@ describe("cross-agent protocol", () => {
 
   describe("sendReply / checkForReply", () => {
     it("creates response and delivers to sender inbox", () => {
+      const { sendLetter, sendReply, readInbox, checkForReply } = mods.crossAgent;
       // Send a letter from A to B
       const { id } = sendLetter({
         from: repoA,
@@ -328,6 +386,7 @@ describe("cross-agent protocol", () => {
     });
 
     it("returns null when no reply exists", () => {
+      const { sendLetter, checkForReply } = mods.crossAgent;
       const { id } = sendLetter({
         from: repoA,
         to: repoB,
@@ -339,6 +398,7 @@ describe("cross-agent protocol", () => {
     });
 
     it("handles failed status", () => {
+      const { sendLetter, sendReply, readInbox, checkForReply } = mods.crossAgent;
       const { id } = sendLetter({
         from: repoA,
         to: repoB,
@@ -358,12 +418,39 @@ describe("cross-agent protocol", () => {
       const response = checkForReply(repoA, id);
       expect(response.status).toBe("failed");
     });
+
+    it("skips delivery to unregistered sender (no throw)", () => {
+      const { sendLetter, sendReply, readInbox, checkForReply } = mods.crossAgent;
+      const { id } = sendLetter({
+        from: repoA,
+        to: repoB,
+        title: "Test",
+        body: "Body",
+      });
+
+      const inbox = readInbox(repoB, { type: "request" });
+      const letter = { ...inbox[0] };
+      // Set from to unregistered path
+      letter.from = "/nonexistent/unregistered/path";
+
+      // Should not throw
+      const reply = sendReply({
+        repoPath: repoB,
+        originalLetter: letter,
+        changesMade: "Done",
+      });
+
+      expect(reply.id).toBeTruthy();
+      // Reply should NOT be delivered to unregistered sender
+      expect(checkForReply("/nonexistent/unregistered/path", letter.id)).toBeNull();
+    });
   });
 
   // ── Verification fields ──────────────────────────────────────────────
 
   describe("verification steps and results", () => {
     it("includes verification steps in letter and results in response", () => {
+      const { sendLetter, sendReply, readInbox, checkForReply } = mods.crossAgent;
       const { id } = sendLetter({
         from: repoA,
         to: repoB,
@@ -395,6 +482,7 @@ describe("cross-agent protocol", () => {
     });
 
     it("handles empty verification steps", () => {
+      const { serializeLetter, parseLetter } = mods.crossAgent;
       const markdown = serializeLetter({
         id: "test-id",
         title: "Test",
@@ -413,6 +501,7 @@ describe("cross-agent protocol", () => {
 
   describe("clearStaleInbox", () => {
     it("moves pending letters to cleared directory", () => {
+      const { sendLetter, readInbox, clearStaleInbox } = mods.crossAgent;
       sendLetter({
         from: repoA,
         to: repoB,
@@ -436,6 +525,7 @@ describe("cross-agent protocol", () => {
     });
 
     it("does not clear in-progress or completed letters", () => {
+      const { sendLetter, clearStaleInbox } = mods.crossAgent;
       const { id } = sendLetter({
         from: repoA,
         to: repoB,
@@ -454,7 +544,82 @@ describe("cross-agent protocol", () => {
     });
 
     it("returns 0 for empty inbox", () => {
+      const { clearStaleInbox } = mods.crossAgent;
       expect(clearStaleInbox(repoB)).toBe(0);
+    });
+  });
+
+  // ── Frontmatter sanitization ──────────────────────────────────────
+
+  describe("frontmatter injection prevention", () => {
+    it("prevents newline injection in title from corrupting frontmatter", () => {
+      const { serializeLetter, parseLetter } = mods.crossAgent;
+      const markdown = serializeLetter({
+        id: "inject-test",
+        title: "foo\nstatus: hacked",
+        from: "/a",
+        to: "/b",
+        status: "pending",
+        priority: "medium",
+        createdAt: "2025-01-01T00:00:00Z",
+        body: "test body",
+      });
+      const parsed = parseLetter(markdown);
+      // The status should still be "pending", not "hacked"
+      expect(parsed.status).toBe("pending");
+      // Title should have newline stripped
+      expect(parsed.title).not.toContain("\n");
+    });
+
+    it("prevents newline injection in response frontmatter", () => {
+      const { serializeResponse, parseLetter } = mods.crossAgent;
+      const markdown = serializeResponse({
+        id: "resp-inject",
+        title: "normal\nid: evil-id",
+        from: "/a",
+        to: "/b",
+        inReplyTo: "req-1",
+        status: "completed",
+        createdAt: "2025-01-01T00:00:00Z",
+      });
+      const parsed = parseLetter(markdown);
+      expect(parsed.id).toBe("resp-inject");
+      expect(parsed.title).not.toContain("\n");
+    });
+  });
+
+  // ── Inbox limits ──────────────────────────────────────────────────
+
+  describe("enforceInboxLimits", () => {
+    it("deletes oldest cleared files when inbox exceeds limit", () => {
+      const { enforceInboxLimits } = mods.crossAgent;
+      // Set low limit
+      process.env.SMOL_AGENT_MAX_INBOX = "2";
+
+      const inboxDir = path.join(repoA, ".smol-agent/inbox");
+      const clearedDir = path.join(inboxDir, "cleared");
+      fs.mkdirSync(clearedDir, { recursive: true });
+
+      // Create 3 active inbox files
+      fs.writeFileSync(path.join(inboxDir, "a.letter.md"), "test");
+      fs.writeFileSync(path.join(inboxDir, "b.letter.md"), "test");
+      fs.writeFileSync(path.join(inboxDir, "c.letter.md"), "test");
+
+      // Create 2 cleared files (oldest first)
+      fs.writeFileSync(path.join(clearedDir, "old1.letter.md"), "old1");
+      // Small delay to ensure different mtime
+      const oldStat = path.join(clearedDir, "old1.letter.md");
+      fs.utimesSync(oldStat, new Date(2020, 0, 1), new Date(2020, 0, 1));
+      fs.writeFileSync(path.join(clearedDir, "old2.letter.md"), "old2");
+
+      enforceInboxLimits(repoA);
+
+      // Should have deleted 1 from cleared (3 active - 2 limit = 1 to delete)
+      const remaining = fs.readdirSync(clearedDir);
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0]).toBe("old2.letter.md");
+
+      delete process.env.SMOL_AGENT_MAX_INBOX;
     });
   });
 
@@ -462,6 +627,7 @@ describe("cross-agent protocol", () => {
 
   describe("end-to-end workflow", () => {
     it("simulates frontend requesting backend work with verification", () => {
+      const { sendLetter, sendReply, readInbox, readOutbox, checkForReply } = mods.crossAgent;
       // 1. Frontend sends a letter to backend with verification steps
       const { id } = sendLetter({
         from: repoA,

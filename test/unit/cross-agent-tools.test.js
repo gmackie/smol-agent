@@ -27,6 +27,13 @@ async function loadModules() {
   const ts = Date.now();
   const registry = await import(`../../src/agent-registry.js?t=${ts}`);
   const crossAgent = await import(`../../src/cross-agent.js?t=${ts}`);
+  // Ensure both repos are registered so path validation passes
+  if (!registry.loadRegistry().agents[path.resolve(tmpRepoA)]) {
+    registry.registerAgent({ repoPath: tmpRepoA, name: "repo-a" });
+  }
+  if (!registry.loadRegistry().agents[path.resolve(tmpRepoB)]) {
+    registry.registerAgent({ repoPath: tmpRepoB, name: "repo-b" });
+  }
   return { registry, crossAgent };
 }
 

@@ -120,7 +120,10 @@ register("send_letter", {
         }
       }
 
-      // Relationship gating: only allow communication between related agents
+      // Relationship gating: only allow communication between related agents.
+      // This check is intentionally bidirectional — if A has a relation to B,
+      // getRelatedAgents returns both outgoing (A→B) and incoming (B→A) relations,
+      // so either side having the relation is sufficient to communicate.
       const related = getRelatedAgents(cwd);
       const hasRelationship = related.some((r) => r.agent.path === path.resolve(toPath));
       if (!hasRelationship) {
@@ -511,12 +514,11 @@ register("link_repos", {
   },
   async execute(args) {
     try {
-      // Resolve names to paths
+      // Resolve names to paths — all queries go through findAgent()
+      // to ensure only registered agents can be linked
       const resolveAgent = (query) => {
-        if (path.isAbsolute(query)) return query;
         const agent = findAgent(query);
-        if (agent) return agent.path;
-        return null;
+        return agent ? agent.path : null;
       };
 
       const fromPath = resolveAgent(args.from);

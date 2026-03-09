@@ -222,9 +222,21 @@ export function touchAgent(repoPath) {
     const registry = loadRegistry();
 
     if (!registry.agents[resolved]) {
-      // First time — auto-register with defaults (release lock first to avoid deadlock)
-      releaseLock();
-      return registerAgent({ repoPath: resolved });
+      // First time — inline registration to avoid nested lock acquisition
+      const entry = {
+        name: path.basename(resolved),
+        path: resolved,
+        role: "",
+        description: "",
+        snippet: "",
+        relations: [],
+        registeredAt: new Date().toISOString(),
+        lastSeen: new Date().toISOString(),
+      };
+      registry.agents[resolved] = entry;
+      saveRegistry(registry);
+      logger.info(`Agent registered: ${entry.name} (${resolved})`);
+      return entry;
     }
 
     registry.agents[resolved].lastSeen = new Date().toISOString();
@@ -333,25 +345,31 @@ export function addRelation(fromRepo, toRepo, type = "related") {
     const registry = loadRegistry();
 
     if (!registry.agents[fromResolved]) {
-      // Release lock before calling registerAgent (which acquires its own lock)
-      releaseLock();
-      registerAgent({ repoPath: fromResolved });
-      acquireLock();
+      // Inline registration to avoid nested lock acquisition
+      registry.agents[fromResolved] = {
+        name: path.basename(fromResolved),
+        path: fromResolved,
+        role: "",
+        description: "",
+        snippet: "",
+        relations: [],
+        registeredAt: new Date().toISOString(),
+        lastSeen: new Date().toISOString(),
+      };
+      logger.info(`Agent registered: ${path.basename(fromResolved)} (${fromResolved})`);
     }
 
-    // Re-read after potential unlock/relock
-    const freshRegistry = loadRegistry();
-    const agent = freshRegistry.agents[fromResolved];
+    const agent = registry.agents[fromResolved];
     // Avoid duplicate relations
     const exists = agent.relations.some(
       (r) => r.repo === toResolved && r.type === type,
     );
     if (!exists) {
       agent.relations.push({ repo: toResolved, type });
-      saveRegistry(freshRegistry);
       logger.info(`Relation added: ${fromResolved} --${type}--> ${toResolved}`);
     }
 
+    saveRegistry(registry);
     return agent;
   });
 }
