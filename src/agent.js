@@ -1268,6 +1268,12 @@ export class Agent extends EventEmitter {
     this._pendingInjections = [];
     this._approveAll = false;
     this._shiftLeft.reset();
+    // Stop the cross-agent response watcher so it doesn't inject stale replies
+    // into a fresh conversation. A new watcher will be created on next _init().
+    if (this._responseWatcher) {
+      this._responseWatcher.stop();
+      this._responseWatcher = null;
+    }
     // Clear session so next run starts fresh (unless a new session is started)
     this._session = null;
   }

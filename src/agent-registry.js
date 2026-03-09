@@ -33,6 +33,95 @@ const XDG_CONFIG_HOME =
   process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
 const REGISTRY_DIR = path.join(XDG_CONFIG_HOME, "smol-agent");
 const REGISTRY_FILE = path.join(REGISTRY_DIR, "agents.json");
+const LOCK_FILE = path.join(REGISTRY_DIR, "agents.json.lock");
+const LOCK_TIMEOUT_MS = 5000;
+const LOCK_STALE_MS = 30000;
+
+// ── File locking ──────────────────────────────────────────────────────
+
+/**
+ * Acquire an exclusive lock on the registry file.
+ * Uses mkdir-based locking (atomic on all platforms).
+ * Returns a release function.
+ */
+function acquireLock() {
+  fs.mkdirSync(REGISTRY_DIR, { recursive: true });
+  const start = Date.now();
+
+  while (true) {
+    try {
+      fs.mkdirSync(LOCK_FILE);
+      // Write our PID so stale locks can be detected
+      fs.writeFileSync(path.join(LOCK_FILE, "pid"), String(process.pid));
+      return;
+    } catch (err) {
+      if (err.code !== "EEXIST") throw err;
+
+      // Check for stale lock (process died without releasing)
+      try {
+        const pidFile = path.join(LOCK_FILE, "pid");
+        if (fs.existsSync(pidFile)) {
+          const lockPid = parseInt(fs.readFileSync(pidFile, "utf-8"), 10);
+          let processAlive = true;
+          try { process.kill(lockPid, 0); } catch { processAlive = false; }
+          if (!processAlive) {
+            // Stale lock — remove and retry
+            fs.rmSync(LOCK_FILE, { recursive: true, force: true });
+            continue;
+          }
+        }
+      } catch {
+        // If we can't read the pid file, check age-based staleness
+      }
+
+      // Check age-based staleness as fallback
+      try {
+        const stat = fs.statSync(LOCK_FILE);
+        if (Date.now() - stat.mtimeMs > LOCK_STALE_MS) {
+          fs.rmSync(LOCK_FILE, { recursive: true, force: true });
+          continue;
+        }
+      } catch {
+        // Lock dir was removed between our check — retry
+        continue;
+      }
+
+      if (Date.now() - start > LOCK_TIMEOUT_MS) {
+        // Force-break the lock after timeout to prevent permanent deadlock
+        logger.warn("Registry lock timed out, force-breaking stale lock");
+        fs.rmSync(LOCK_FILE, { recursive: true, force: true });
+        continue;
+      }
+
+      // Busy-wait with a small delay
+      const waitMs = 10 + Math.random() * 40;
+      const waitUntil = Date.now() + waitMs;
+      while (Date.now() < waitUntil) { /* spin */ }
+    }
+  }
+}
+
+function releaseLock() {
+  try {
+    fs.rmSync(LOCK_FILE, { recursive: true, force: true });
+  } catch {
+    // Best-effort cleanup
+  }
+}
+
+/**
+ * Execute a function while holding the registry lock.
+ * The function receives the current registry and should return the
+ * (possibly modified) registry. If it returns a registry, it is saved.
+ */
+function withRegistryLock(fn) {
+  acquireLock();
+  try {
+    return fn();
+  } finally {
+    releaseLock();
+  }
+}
 
 // ── Read / write ──────────────────────────────────────────────────────
 
@@ -90,25 +179,28 @@ export function registerAgent({
   snippet,
 }) {
   const resolved = path.resolve(repoPath);
-  const registry = loadRegistry();
-  const existing = registry.agents[resolved] || {};
 
-  const entry = {
-    ...existing,
-    name: name || existing.name || path.basename(resolved),
-    path: resolved,
-    role: role || existing.role || "",
-    description: description || existing.description || "",
-    snippet: snippet || existing.snippet || "",
-    relations: existing.relations || [],
-    registeredAt: existing.registeredAt || new Date().toISOString(),
-    lastSeen: new Date().toISOString(),
-  };
+  return withRegistryLock(() => {
+    const registry = loadRegistry();
+    const existing = registry.agents[resolved] || {};
 
-  registry.agents[resolved] = entry;
-  saveRegistry(registry);
-  logger.info(`Agent registered: ${entry.name} (${resolved})`);
-  return entry;
+    const entry = {
+      ...existing,
+      name: name || existing.name || path.basename(resolved),
+      path: resolved,
+      role: role || existing.role || "",
+      description: description || existing.description || "",
+      snippet: snippet || existing.snippet || "",
+      relations: existing.relations || [],
+      registeredAt: existing.registeredAt || new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
+    };
+
+    registry.agents[resolved] = entry;
+    saveRegistry(registry);
+    logger.info(`Agent registered: ${entry.name} (${resolved})`);
+    return entry;
+  });
 }
 
 /**
@@ -117,16 +209,20 @@ export function registerAgent({
  */
 export function touchAgent(repoPath) {
   const resolved = path.resolve(repoPath);
-  const registry = loadRegistry();
 
-  if (!registry.agents[resolved]) {
-    // First time — auto-register with defaults
-    return registerAgent({ repoPath: resolved });
-  }
+  return withRegistryLock(() => {
+    const registry = loadRegistry();
 
-  registry.agents[resolved].lastSeen = new Date().toISOString();
-  saveRegistry(registry);
-  return registry.agents[resolved];
+    if (!registry.agents[resolved]) {
+      // First time — auto-register with defaults (release lock first to avoid deadlock)
+      releaseLock();
+      return registerAgent({ repoPath: resolved });
+    }
+
+    registry.agents[resolved].lastSeen = new Date().toISOString();
+    saveRegistry(registry);
+    return registry.agents[resolved];
+  });
 }
 
 /**
@@ -134,16 +230,19 @@ export function touchAgent(repoPath) {
  */
 export function unregisterAgent(repoPath) {
   const resolved = path.resolve(repoPath);
-  const registry = loadRegistry();
 
-  if (!registry.agents[resolved]) {
-    return false;
-  }
+  return withRegistryLock(() => {
+    const registry = loadRegistry();
 
-  delete registry.agents[resolved];
-  saveRegistry(registry);
-  logger.info(`Agent unregistered: ${resolved}`);
-  return true;
+    if (!registry.agents[resolved]) {
+      return false;
+    }
+
+    delete registry.agents[resolved];
+    saveRegistry(registry);
+    logger.info(`Agent unregistered: ${resolved}`);
+    return true;
+  });
 }
 
 // ── Querying ──────────────────────────────────────────────────────────
@@ -221,24 +320,32 @@ export function findAgent(query) {
 export function addRelation(fromRepo, toRepo, type = "related") {
   const fromResolved = path.resolve(fromRepo);
   const toResolved = path.resolve(toRepo);
-  const registry = loadRegistry();
 
-  if (!registry.agents[fromResolved]) {
-    registerAgent({ repoPath: fromResolved });
-  }
+  return withRegistryLock(() => {
+    const registry = loadRegistry();
 
-  const agent = registry.agents[fromResolved];
-  // Avoid duplicate relations
-  const exists = agent.relations.some(
-    (r) => r.repo === toResolved && r.type === type,
-  );
-  if (!exists) {
-    agent.relations.push({ repo: toResolved, type });
-    saveRegistry(registry);
-    logger.info(`Relation added: ${fromResolved} --${type}--> ${toResolved}`);
-  }
+    if (!registry.agents[fromResolved]) {
+      // Release lock before calling registerAgent (which acquires its own lock)
+      releaseLock();
+      registerAgent({ repoPath: fromResolved });
+      acquireLock();
+    }
 
-  return agent;
+    // Re-read after potential unlock/relock
+    const freshRegistry = loadRegistry();
+    const agent = freshRegistry.agents[fromResolved];
+    // Avoid duplicate relations
+    const exists = agent.relations.some(
+      (r) => r.repo === toResolved && r.type === type,
+    );
+    if (!exists) {
+      agent.relations.push({ repo: toResolved, type });
+      saveRegistry(freshRegistry);
+      logger.info(`Relation added: ${fromResolved} --${type}--> ${toResolved}`);
+    }
+
+    return agent;
+  });
 }
 
 /**
@@ -398,22 +505,25 @@ export function detectSnippet(repoPath) {
  */
 export function updateAgent(repoPath, fields) {
   const resolved = path.resolve(repoPath);
-  const registry = loadRegistry();
 
-  if (!registry.agents[resolved]) {
-    return null;
-  }
+  return withRegistryLock(() => {
+    const registry = loadRegistry();
 
-  const entry = registry.agents[resolved];
-  for (const [key, value] of Object.entries(fields)) {
-    if (value !== undefined && value !== null) {
-      entry[key] = value;
+    if (!registry.agents[resolved]) {
+      return null;
     }
-  }
 
-  saveRegistry(registry);
-  logger.info(`Agent updated: ${entry.name} (${resolved})`);
-  return entry;
+    const entry = registry.agents[resolved];
+    for (const [key, value] of Object.entries(fields)) {
+      if (value !== undefined && value !== null) {
+        entry[key] = value;
+      }
+    }
+
+    saveRegistry(registry);
+    logger.info(`Agent updated: ${entry.name} (${resolved})`);
+    return entry;
+  });
 }
 
 /**
@@ -427,26 +537,29 @@ export function updateAgent(repoPath, fields) {
 export function removeRelation(fromRepo, toRepo, type) {
   const fromResolved = path.resolve(fromRepo);
   const toResolved = path.resolve(toRepo);
-  const registry = loadRegistry();
 
-  if (!registry.agents[fromResolved]) return false;
+  return withRegistryLock(() => {
+    const registry = loadRegistry();
 
-  const agent = registry.agents[fromResolved];
-  const before = agent.relations.length;
+    if (!registry.agents[fromResolved]) return false;
 
-  agent.relations = agent.relations.filter((r) => {
-    if (r.repo !== toResolved) return true;
-    if (type && r.type !== type) return true;
+    const agent = registry.agents[fromResolved];
+    const before = agent.relations.length;
+
+    agent.relations = agent.relations.filter((r) => {
+      if (r.repo !== toResolved) return true;
+      if (type && r.type !== type) return true;
+      return false;
+    });
+
+    if (agent.relations.length < before) {
+      saveRegistry(registry);
+      logger.info(`Relation removed: ${fromResolved} -x-> ${toResolved}`);
+      return true;
+    }
+
     return false;
   });
-
-  if (agent.relations.length < before) {
-    saveRegistry(registry);
-    logger.info(`Relation removed: ${fromResolved} -x-> ${toResolved}`);
-    return true;
-  }
-
-  return false;
 }
 
 /**

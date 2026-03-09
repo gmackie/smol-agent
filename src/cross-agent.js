@@ -528,6 +528,10 @@ export function watchForResponses({ repoPath, onResponse, signal }) {
     }
   });
 
+  watcher.on("error", (err) => {
+    logger.error(`Response watcher error: ${err.message}`);
+  });
+
   if (signal) {
     signal.addEventListener("abort", () => watcher.close(), { once: true });
   }
@@ -603,6 +607,10 @@ export function watchInbox({
     }
   });
 
+  watcher.on("error", (err) => {
+    logger.error(`Inbox watcher error: ${err.message}`);
+  });
+
   if (signal) {
     signal.addEventListener("abort", () => watcher.close(), { once: true });
   }
@@ -612,30 +620,35 @@ export function watchInbox({
       type: "request",
       status: "pending",
     });
-    for (const letter of pending) {
-      if (signal?.aborted) break;
-      const filename = `${letter.id}.letter.md`;
-      if (processing.has(filename)) continue;
 
-      processing.add(filename);
-      onLetterReceived?.(letter);
+    const tasks = pending
+      .filter((letter) => {
+        if (signal?.aborted) return false;
+        const filename = `${letter.id}.letter.md`;
+        if (processing.has(filename)) return false;
+        processing.add(filename);
+        onLetterReceived?.(letter);
+        return true;
+      })
+      .map(async (letter) => {
+        try {
+          await processLetter({
+            repoPath: path.resolve(repoPath),
+            letter,
+            provider,
+            model,
+            apiKey,
+          });
+          onAgentComplete?.(letter, null);
+        } catch (err) {
+          logger.error(`Failed to process letter ${letter.id}: ${err.message}`);
+          onAgentComplete?.(letter, err);
+        } finally {
+          processing.delete(`${letter.id}.letter.md`);
+        }
+      });
 
-      try {
-        await processLetter({
-          repoPath: path.resolve(repoPath),
-          letter,
-          provider,
-          model,
-          apiKey,
-        });
-        onAgentComplete?.(letter, null);
-      } catch (err) {
-        logger.error(`Failed to process letter ${letter.id}: ${err.message}`);
-        onAgentComplete?.(letter, err);
-      } finally {
-        processing.delete(filename);
-      }
-    }
+    await Promise.all(tasks);
   }
 
   return {
@@ -710,7 +723,8 @@ export function processLetter({
 
   if (provider) args.push("--provider", provider);
   if (model) args.push("--model", model);
-  if (apiKey) args.push("--api-key", apiKey);
+  // API key is passed via environment variable instead of CLI args
+  // to avoid exposure in process listings (ps aux).
   args.push(prompt);
 
   logger.info(`Spawning agent for letter ${letter.id} in ${repoPath}`);
@@ -723,20 +737,35 @@ export function processLetter({
     const command = fs.existsSync(localBin) ? "node" : "smol-agent";
     const spawnArgs = command === "node" ? [localBin, ...args] : args;
 
+    const childEnv = { ...process.env };
+    if (apiKey) {
+      // Pass API key via env var to avoid exposing it in process listings
+      childEnv.SMOL_AGENT_API_KEY = apiKey;
+    }
+
     const child = spawn(command, spawnArgs, {
       cwd: repoPath,
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env },
+      env: childEnv,
     });
 
+    // Cap captured output to prevent OOM for long-running agents.
+    // We only need the tail for error diagnostics.
+    const MAX_OUTPUT = 8192;
     let stdout = "";
     let stderr = "";
 
     child.stdout.on("data", (data) => {
       stdout += data.toString();
+      if (stdout.length > MAX_OUTPUT * 2) {
+        stdout = stdout.slice(-MAX_OUTPUT);
+      }
     });
     child.stderr.on("data", (data) => {
       stderr += data.toString();
+      if (stderr.length > MAX_OUTPUT * 2) {
+        stderr = stderr.slice(-MAX_OUTPUT);
+      }
     });
 
     child.on("error", (err) => {
