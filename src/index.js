@@ -172,6 +172,12 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 
+// Support API key via env var (used by cross-agent spawning to avoid
+// exposing keys in process listings)
+if (!apiKey && process.env.SMOL_AGENT_API_KEY) {
+  apiKey = process.env.SMOL_AGENT_API_KEY;
+}
+
 function printUsage() {
   console.log(`smol-agent — a small coding agent powered by local and cloud LLMs
 

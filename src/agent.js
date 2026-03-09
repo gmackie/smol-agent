@@ -18,7 +18,7 @@ import {
 import { architectPass, formatPlanForEditor } from "./architect.js";
 import { createCheckpoint, rollbackToCheckpoint, listCheckpoints, cleanupCheckpoints } from "./checkpoint.js";
 import { touchAgent, detectRepoMetadata, detectSnippet, registerAgent } from "./agent-registry.js";
-import { watchForResponses } from "./cross-agent.js";
+import { watchForResponses, clearStaleInbox } from "./cross-agent.js";
 
 // Import all tools so they self-register
 import "./tools/run_command.js";
@@ -457,6 +457,13 @@ export class Agent extends EventEmitter {
       logger.debug(`Agent registry: ${err.message}`);
     }
 
+    // Clear stale inbox letters on startup — agents only process new work
+    try {
+      clearStaleInbox(this.jailDirectory);
+    } catch (err) {
+      logger.debug(`Inbox cleanup: ${err.message}`);
+    }
+
     // Start watching for cross-agent response letters arriving in our inbox.
     // When a reply arrives, inject it into the conversation so the agent
     // doesn't have to poll with check_reply.
@@ -471,6 +478,7 @@ export class Agent extends EventEmitter {
               `From: ${response.from}`,
               `Status: ${response.status || "completed"}`,
               response.changesMade ? `Changes: ${response.changesMade}` : "",
+              response.verificationResults ? `Verification: ${response.verificationResults}` : "",
               response.apiContract ? `API: ${response.apiContract}` : "",
               response.notes ? `Notes: ${response.notes}` : "",
             ].filter(Boolean).join("\n");
@@ -1268,6 +1276,12 @@ export class Agent extends EventEmitter {
     this._pendingInjections = [];
     this._approveAll = false;
     this._shiftLeft.reset();
+    // Stop the cross-agent response watcher so it doesn't inject stale replies
+    // into a fresh conversation. A new watcher will be created on next _init().
+    if (this._responseWatcher) {
+      this._responseWatcher.stop();
+      this._responseWatcher = null;
+    }
     // Clear session so next run starts fresh (unless a new session is started)
     this._session = null;
   }
