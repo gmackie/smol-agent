@@ -337,4 +337,178 @@ describe("agent registry", () => {
       expect(meta.name).toBe(path.basename(repoDir));
     });
   });
+
+  describe("snippet field", () => {
+    it("stores snippet on registration", () => {
+      registry.registerAgent({
+        repoPath: "/tmp/api",
+        name: "api-service",
+        snippet: "REST API: GET /users, POST /orders. Auth via JWT. PostgreSQL.",
+      });
+
+      const agents = registry.listAgents();
+      expect(agents[0].snippet).toBe(
+        "REST API: GET /users, POST /orders. Auth via JWT. PostgreSQL.",
+      );
+    });
+
+    it("preserves snippet on re-registration", () => {
+      registry.registerAgent({
+        repoPath: "/tmp/api",
+        name: "api-service",
+        snippet: "Original snippet",
+      });
+      registry.registerAgent({
+        repoPath: "/tmp/api",
+        name: "api-service-v2",
+      });
+
+      const agents = registry.listAgents();
+      expect(agents[0].snippet).toBe("Original snippet");
+      expect(agents[0].name).toBe("api-service-v2");
+    });
+  });
+
+  describe("updateAgent", () => {
+    it("updates specific fields", () => {
+      registry.registerAgent({
+        repoPath: "/tmp/repo",
+        name: "original",
+        role: "backend",
+      });
+
+      const updated = registry.updateAgent("/tmp/repo", {
+        role: "frontend",
+        snippet: "React SPA",
+      });
+
+      expect(updated.name).toBe("original");
+      expect(updated.role).toBe("frontend");
+      expect(updated.snippet).toBe("React SPA");
+    });
+
+    it("returns null for unregistered repo", () => {
+      expect(registry.updateAgent("/tmp/nonexistent", { role: "x" })).toBeNull();
+    });
+  });
+
+  describe("removeRelation", () => {
+    beforeEach(() => {
+      registry.registerAgent({ repoPath: "/tmp/a", name: "a" });
+      registry.registerAgent({ repoPath: "/tmp/b", name: "b" });
+      registry.addRelation("/tmp/a", "/tmp/b", "depends-on");
+      registry.addRelation("/tmp/a", "/tmp/b", "consumes");
+    });
+
+    it("removes a specific relation type", () => {
+      const removed = registry.removeRelation("/tmp/a", "/tmp/b", "depends-on");
+      expect(removed).toBe(true);
+
+      const agent = registry.findAgent("a");
+      expect(agent.relations).toHaveLength(1);
+      expect(agent.relations[0].type).toBe("consumes");
+    });
+
+    it("removes all relations when no type specified", () => {
+      const removed = registry.removeRelation("/tmp/a", "/tmp/b");
+      expect(removed).toBe(true);
+
+      const agent = registry.findAgent("a");
+      expect(agent.relations).toHaveLength(0);
+    });
+
+    it("returns false when no matching relation", () => {
+      expect(registry.removeRelation("/tmp/a", "/tmp/nonexistent")).toBe(false);
+    });
+  });
+
+  describe("detectSnippet", () => {
+    let repoDir;
+
+    beforeEach(() => {
+      repoDir = fs.mkdtempSync(path.join(os.tmpdir(), "snippet-test-"));
+    });
+
+    afterEach(() => {
+      fs.rmSync(repoDir, { recursive: true, force: true });
+    });
+
+    it("reads from .smol-agent/snippet.md", () => {
+      const snippetDir = path.join(repoDir, ".smol-agent");
+      fs.mkdirSync(snippetDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(snippetDir, "snippet.md"),
+        "REST API with /users and /products endpoints.",
+      );
+
+      const snippet = registry.detectSnippet(repoDir);
+      expect(snippet).toBe("REST API with /users and /products endpoints.");
+    });
+
+    it("returns empty for repos without snippet", () => {
+      expect(registry.detectSnippet(repoDir)).toBe("");
+    });
+  });
+
+  describe("findAgentForTask", () => {
+    beforeEach(() => {
+      registry.registerAgent({
+        repoPath: "/tmp/backend",
+        name: "backend-api",
+        role: "backend",
+        snippet: "REST API endpoints: GET /users, POST /users, GET /products. PostgreSQL database. JWT authentication.",
+      });
+      registry.registerAgent({
+        repoPath: "/tmp/frontend",
+        name: "frontend-app",
+        role: "frontend",
+        snippet: "React SPA with Material UI. User dashboard, product catalog, shopping cart components.",
+      });
+      registry.registerAgent({
+        repoPath: "/tmp/worker",
+        name: "background-worker",
+        role: "worker",
+        snippet: "Background job processing. Email notifications, PDF generation, data exports.",
+      });
+    });
+
+    it("finds backend for API-related tasks", () => {
+      const results = registry.findAgentForTask(
+        "I need a new REST endpoint for user avatars",
+      );
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0].agent.name).toBe("backend-api");
+    });
+
+    it("finds frontend for UI-related tasks", () => {
+      const results = registry.findAgentForTask(
+        "I need a new React component for the shopping cart",
+      );
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0].agent.name).toBe("frontend-app");
+    });
+
+    it("finds worker for background job tasks", () => {
+      const results = registry.findAgentForTask(
+        "I need to send email notifications to users",
+      );
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0].agent.name).toBe("background-worker");
+    });
+
+    it("excludes self when excludeRepo specified", () => {
+      const results = registry.findAgentForTask(
+        "REST API endpoints",
+        "/tmp/backend",
+      );
+      // Should not include backend-api since it's excluded
+      const names = results.map((r) => r.agent.name);
+      expect(names).not.toContain("backend-api");
+    });
+
+    it("returns empty for unrelated queries", () => {
+      const results = registry.findAgentForTask("quantum physics simulation");
+      expect(results).toHaveLength(0);
+    });
+  });
 });

@@ -17,7 +17,7 @@ import {
 } from "./sessions.js";
 import { architectPass, formatPlanForEditor } from "./architect.js";
 import { createCheckpoint, rollbackToCheckpoint, listCheckpoints, cleanupCheckpoints } from "./checkpoint.js";
-import { touchAgent, detectRepoMetadata, registerAgent } from "./agent-registry.js";
+import { touchAgent, detectRepoMetadata, detectSnippet, registerAgent } from "./agent-registry.js";
 
 // Import all tools so they self-register
 import "./tools/run_command.js";
@@ -442,10 +442,12 @@ export class Agent extends EventEmitter {
     // Self-register in the global agent registry so other agents can discover us
     try {
       const meta = detectRepoMetadata(this.jailDirectory);
+      const snippet = detectSnippet(this.jailDirectory);
       registerAgent({
         repoPath: this.jailDirectory,
         name: meta.name,
         description: meta.description,
+        snippet: snippet || undefined,
       });
     } catch (err) {
       logger.debug(`Agent registry: ${err.message}`);

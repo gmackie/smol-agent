@@ -9,6 +9,8 @@
  *   - reply_to_letter: Send a response back to a requesting agent
  *   - list_agents: List all registered agents in the global registry
  *   - link_repos: Create a relationship between two repos in the registry
+ *   - set_snippet: Set the snippet for this repo so other agents can find it
+ *   - find_agent_for_task: Find the best agent to handle a task based on snippets
  */
 
 import { register } from "./registry.js";
@@ -26,6 +28,8 @@ import {
   registerAgent,
   addRelation,
   getRelatedAgents,
+  updateAgent,
+  findAgentForTask,
 } from "../agent-registry.js";
 import { logger } from "../logger.js";
 import fs from "node:fs";
@@ -358,6 +362,7 @@ register("list_agents", {
           path: a.path,
           role: a.role || "(none)",
           description: a.description || "(none)",
+          snippet: a.snippet || "(none)",
           last_seen: a.lastSeen,
           relations: related.map((r) => ({
             name: r.agent.name,
@@ -432,6 +437,93 @@ register("link_repos", {
       };
     } catch (err) {
       logger.error(`link_repos failed: ${err.message}`);
+      return { error: err.message };
+    }
+  },
+});
+
+// ── set_snippet ───────────────────────────────────────────────────────
+
+register("set_snippet", {
+  description:
+    "Set a description snippet for this repo in the global agent registry. " +
+    "The snippet describes what this repo provides (endpoints, services, data) " +
+    "so other agents can automatically find the right repo to send requests to. " +
+    "Example: 'REST API with /users, /products endpoints. Auth via JWT. PostgreSQL database.'",
+  parameters: {
+    type: "object",
+    properties: {
+      snippet: {
+        type: "string",
+        description:
+          "Description of what this repo provides. Be specific about APIs, " +
+          "endpoints, services, data models, or capabilities that other agents might need.",
+      },
+    },
+    required: ["snippet"],
+  },
+  async execute(args, { cwd }) {
+    try {
+      const result = updateAgent(cwd, { snippet: args.snippet });
+      if (!result) {
+        return { error: "This repo is not registered. It will auto-register on next startup." };
+      }
+      return {
+        success: true,
+        message: `Snippet updated for ${result.name}. Other agents can now find this repo based on this description.`,
+      };
+    } catch (err) {
+      logger.error(`set_snippet failed: ${err.message}`);
+      return { error: err.message };
+    }
+  },
+});
+
+// ── find_agent_for_task ───────────────────────────────────────────────
+
+register("find_agent_for_task", {
+  description:
+    "Find the best registered agent to handle a task based on their description snippets. " +
+    "Describe what you need and this tool will rank agents by relevance. " +
+    "Use this before send_letter when you're not sure which agent to contact.",
+  parameters: {
+    type: "object",
+    properties: {
+      task: {
+        type: "string",
+        description:
+          "Description of the task or capability you need. " +
+          "e.g., 'I need a new REST endpoint for user avatars' or 'I need database migration support'",
+      },
+    },
+    required: ["task"],
+  },
+  async execute(args, { cwd }) {
+    try {
+      const results = findAgentForTask(args.task, cwd);
+
+      if (results.length === 0) {
+        return {
+          matches: [],
+          message:
+            "No matching agents found. Use list_agents to see all registered agents, " +
+            "or ask the user which repo to target.",
+        };
+      }
+
+      return {
+        count: results.length,
+        matches: results.map((r) => ({
+          name: r.agent.name,
+          path: r.agent.path,
+          role: r.agent.role || "(none)",
+          snippet: r.agent.snippet || r.agent.description || "(none)",
+          relevance_score: r.score,
+        })),
+        suggestion: `Best match: "${results[0].agent.name}" (score: ${results[0].score}). Use send_letter with to="${results[0].agent.name}" to send a request.`,
+      };
+    } catch (err) {
+      logger.error(`find_agent_for_task failed: ${err.message}`);
       return { error: err.message };
     }
   },

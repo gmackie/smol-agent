@@ -72,6 +72,8 @@ const TOOL_CATEGORIES = {
   reply_to_letter: "write",
   list_agents: "safe",
   link_repos: "safe",
+  set_snippet: "safe",
+  find_agent_for_task: "safe",
 };
 
 /**

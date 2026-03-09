@@ -237,9 +237,24 @@ Letters use YAML frontmatter + markdown body:
 
 Agents self-register in `~/.config/smol-agent/agents.json` on startup, auto-detecting name/description from `package.json`, `pyproject.toml`, `Cargo.toml`, or `go.mod`. This allows agents to discover each other by name instead of requiring absolute paths.
 
-Registry entries include: name, path, role, description, relations (e.g., depends-on, serves), lastSeen timestamp.
+Registry entries include: name, path, role, description, **snippet**, relations (e.g., depends-on, serves), lastSeen timestamp.
+
+**Snippets**: Each repo can provide a description snippet that describes what it offers (endpoints, services, data models). Other agents use `find_agent_for_task` to automatically find the right repo to communicate with. Snippets are auto-detected from `.smol-agent/snippet.md` or AGENT.md, or set manually via `/agent snippet` or `set_snippet` tool.
 
 The `send_letter` tool resolves agent names via the registry, so you can write `send_letter({ to: "backend-api", ... })` instead of providing a full path.
+
+### TUI commands
+
+```
+/agents                           List all registered agents with relations
+/agent info <name>                Show detailed agent info
+/agent add <path> [name]          Register a new agent manually
+/agent remove <name>              Remove an agent from registry
+/agent role <name> <role>         Set agent role (backend, frontend, etc.)
+/agent snippet <name> <text...>   Set agent description snippet
+/agent link <from> <to> <type>    Link two agents (depends-on, serves, consumes, related)
+/agent unlink <from> <to> [type]  Remove a link between agents
+```
 
 ### Tools
 
@@ -252,6 +267,8 @@ The `send_letter` tool resolves agent names via the registry, so you can write `
 | `reply_to_letter` | Reply to an incoming request after completing work | write |
 | `list_agents` | List all registered agents (discover who to send letters to) | safe |
 | `link_repos` | Create a relationship between two repos (depends-on, serves, etc.) | safe |
+| `set_snippet` | Set this repo's description snippet for auto-discovery | safe |
+| `find_agent_for_task` | Find the best agent for a task based on snippet matching | safe |
 
 ### Workflow
 
