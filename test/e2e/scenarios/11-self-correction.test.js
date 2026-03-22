@@ -33,15 +33,24 @@ export async function run() {
 
     const hasNewSig =
       /function\s+greet\s*\(\s*name\s*,\s*greeting\s*\)|greet\s*=\s*\(\s*name\s*,\s*greeting\s*\)/.test(content);
-    const usesParam =
-      content.includes("greeting") &&
-      (/greeting\s*\+/.test(content) || /`\$\{greeting\}/.test(content) || content.includes("greeting +"));
-    const farewellOk = content.includes("farewell") && content.includes("Goodbye");
+
+    // Verify greeting parameter is used in the return value (concatenation or template literal)
+    const usesGreetingInReturn =
+      /greeting\s*\+\s*["',]/.test(content) ||
+      /["']\s*\+\s*greeting/.test(content) ||
+      /`\$\{greeting\}/.test(content) ||
+      /greeting\s*\+\s*['"]/.test(content);
+
+    // Old "Hello, " should be removed from greet function
+    const oldHelloRemoved = !/return\s*["']Hello/.test(content);
+
+    const farewellOk = /function\s+farewell/.test(content) && content.includes("Goodbye");
 
     return scoreResult(meta.name, [
       check("new signature (name, greeting)", hasNewSig, 3, content.slice(0, 160)),
-      check("uses greeting parameter", usesParam, 2),
-      check("farewell preserved", farewellOk, 2),
+      check("greeting used in return value", usesGreetingInReturn, 2),
+      check("old 'Hello' hardcode removed", oldHelloRemoved, 1),
+      check("farewell function preserved", farewellOk, 2),
       check("used edit tool", events.anyToolCalled(["replace_in_file", "write_file"]), 1),
     ]);
   } finally {

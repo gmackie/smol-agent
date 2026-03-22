@@ -19,7 +19,7 @@ export async function run() {
   await seedFile(tmpDir, "config.js", SEED_CONFIG);
 
   try {
-    const _response = await runWithTimeout(
+    await runWithTimeout(
       agent,
       "Move the hardcoded values to environment variables with process.env, and create a .env.example file showing the required variables",
       meta.timeout,
@@ -41,12 +41,20 @@ export async function run() {
     const hasDbHostExample = /DB_HOST|DATABASE_HOST/.test(envExampleContent);
     const hasApiKeyExample = /API_KEY/.test(envExampleContent);
 
+    // Hardcoded values should be removed
+    const noHardcodedHost = !configContent.includes('"localhost"') || /process\.env/.test(configContent);
+    const noHardcodedKey = !configContent.includes('"hardcoded-secret-key"');
+
+    // Check for fallback/default values (good practice)
+    const hasDefaults = /\|\|/.test(configContent) || /\?\?/.test(configContent);
+
     return scoreResult(meta.name, [
       check("read config file", didRead, 1),
       check("made changes", didWrite, 1),
       check("uses process.env", usesProcessEnv, 2, configContent.slice(0, 150)),
       check("DB_HOST from env", dbHostFromEnv, 2),
       check("API_KEY from env", apiKeyFromEnv, 2),
+      check("hardcoded secret removed", noHardcodedKey, 1),
       check("created .env.example", envExampleExists, 1),
       check("DB_HOST in example", hasDbHostExample, 1),
       check("API_KEY in example", hasApiKeyExample, 1),

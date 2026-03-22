@@ -23,7 +23,7 @@ export async function run() {
   await seedFile(tmpDir, "server.js", SEED_SERVER);
 
   try {
-    const _response = await runWithTimeout(
+    await runWithTimeout(
       agent,
       "Add a GET /api/status endpoint that returns JSON with { status: 'ok', timestamp: <current-time> }",
       meta.timeout,
@@ -34,14 +34,23 @@ export async function run() {
     const didRead = events.anyToolCalled(["read_file"]);
     const didEdit = events.anyToolCalled(["replace_in_file", "write_file"]);
 
-    // Check for routing logic
-    const hasRouting = /req\.url|req\.method/.test(content);
-    const hasStatusEndpoint = /\/api\/status/.test(content);
+    // Check for routing logic — must check request URL
+    const hasUrlCheck = /req\.url/.test(content);
+    const hasStatusEndpoint = /["']\/api\/status["']/.test(content);
 
-    // Check for JSON response
-    const hasJSONContentType = /application\/json/.test(content);
-    const hasStatusOk = /status.*ok|["']status["']:\s*["']ok["']/.test(content);
-    const hasTimestamp = /timestamp|Date|toISOString/.test(content);
+    // Check for JSON response setup
+    const hasJSONContentType = /["']application\/json["']/.test(content);
+
+    // Status "ok" should be in a JSON object, not just anywhere
+    const hasStatusOk = /["']status["']\s*:\s*["']ok["']/.test(content) ||
+      /status:\s*["']ok["']/.test(content);
+
+    // Timestamp should use Date constructor or toISOString, not just the word "timestamp"
+    const hasTimestamp = /new\s+Date\s*\(/.test(content) || /Date\.now\s*\(/.test(content) ||
+      /\.toISOString\s*\(/.test(content);
+
+    // JSON.stringify should be used to serialize the response
+    const usesJSONStringify = /JSON\.stringify/.test(content);
 
     // Server still works
     const stillListens = /listen\s*\(\s*3000/.test(content);
@@ -49,11 +58,12 @@ export async function run() {
     return scoreResult(meta.name, [
       check("read server file", didRead, 1),
       check("made edits", didEdit, 1),
-      check("added routing logic", hasRouting, 2, content.slice(0, 150)),
-      check("handles /api/status", hasStatusEndpoint, 2),
-      check("sets JSON content-type", hasJSONContentType, 2),
-      check("includes status: ok", hasStatusOk, 1),
-      check("includes timestamp", hasTimestamp, 1),
+      check("checks req.url for routing", hasUrlCheck, 2, content.slice(0, 150)),
+      check("handles /api/status path", hasStatusEndpoint, 2),
+      check("sets application/json content-type", hasJSONContentType, 2),
+      check("includes status: ok in response", hasStatusOk, 1),
+      check("generates timestamp with Date", hasTimestamp, 1),
+      check("uses JSON.stringify", usesJSONStringify, 1),
       check("server still listens on 3000", stillListens, 1),
     ]);
   } finally {

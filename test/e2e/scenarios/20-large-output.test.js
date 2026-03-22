@@ -25,14 +25,16 @@ export async function run() {
       r?.stdout?.includes("line") || r?.output?.includes("line"),
     );
 
-    // Agent should mention the count or that there was a lot of output
-    const mentionsCount = /500|lines?|output/i.test(response);
+    // Agent should specifically mention the count (500) or at least discuss the line count
+    const mentionsExactCount = /\b500\b/.test(response);
+    const mentionsLineCount = /\d+\s*lines?/i.test(response) || /lines?\s*:?\s*\d+/i.test(response);
     const noError = !cmdResults.some((r) => r?.error);
 
     return scoreResult(meta.name, [
       check("ran the command", ranCmd, 3),
       check("got output", gotOutput, 2, cmdResults[0] ? JSON.stringify(cmdResults[0]).slice(0, 120) : "no result"),
-      check("mentions output count/size", mentionsCount, 2, response.slice(0, 160)),
+      check("mentions 500 lines", mentionsExactCount, 2, response.slice(0, 160)),
+      check("discusses line count", mentionsExactCount || mentionsLineCount, 1, response.slice(0, 160)),
       check("no command error", noError, 1),
     ]);
   } finally {
