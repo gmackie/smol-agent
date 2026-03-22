@@ -45,13 +45,47 @@ export class OllamaProvider extends BaseLLMProvider {
     return Math.min(Math.max(Math.ceil(estTokens * 1.5), MIN_CONTEXT), maxTokens);
   }
 
+  /**
+   * Sanitize message ordering for Ollama's API.
+   *
+   * Ollama requires that `tool` messages immediately follow an `assistant`
+   * message containing `tool_calls`. If any `user` messages were injected
+   * between the assistant's tool_calls and the tool results (e.g. loop
+   * warnings or hints), move them after the tool results block.
+   */
+  _sanitizeMessages(messages) {
+    const sanitized = [];
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+
+      // If this is a user message and the next message is a tool message,
+      // defer this user message until after the tool result block
+      if (msg.role === "user" && i + 1 < messages.length && messages[i + 1].role === "tool") {
+        // Find the end of the tool result block
+        let j = i + 1;
+        while (j < messages.length && messages[j].role === "tool") j++;
+        // Push tool results first, then the deferred user message
+        for (let k = i + 1; k < j; k++) {
+          sanitized.push(messages[k]);
+        }
+        sanitized.push(msg);
+        i = j - 1; // skip past the tool results (loop will i++)
+        continue;
+      }
+
+      sanitized.push(msg);
+    }
+    return sanitized;
+  }
+
   async *chatStream(messages, tools, signal, maxTokens = DEFAULT_MAX_TOKENS, onRetry) {
-    const numCtx = this._calculateNumCtx(messages, maxTokens);
+    const sanitized = this._sanitizeMessages(messages);
+    const numCtx = this._calculateNumCtx(sanitized, maxTokens);
 
     const stream = await this._withRetry(() =>
       this.client.chat({
         model: this._model,
-        messages,
+        messages: sanitized,
         tools,
         stream: true,
         options: { num_ctx: numCtx },
@@ -89,12 +123,13 @@ export class OllamaProvider extends BaseLLMProvider {
   }
 
   async chatWithRetry(messages, tools, signal, maxTokens = DEFAULT_MAX_TOKENS, onRetry) {
-    const numCtx = this._calculateNumCtx(messages, maxTokens);
+    const sanitized = this._sanitizeMessages(messages);
+    const numCtx = this._calculateNumCtx(sanitized, maxTokens);
 
     return this._withRetry(() =>
       this.client.chat({
         model: this._model,
-        messages,
+        messages: sanitized,
         tools,
         stream: false,
         options: { num_ctx: numCtx },

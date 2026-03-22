@@ -1103,13 +1103,15 @@ export class Agent extends EventEmitter {
           this.emit("token_usage", this.getTokenInfo());
           return msg;
         }
+        // Defer loop warning until after tool results to avoid breaking
+        // message ordering (tool results must follow the assistant message
+        // that contained tool_calls — injecting a user message in between
+        // creates an invalid [user] → [tool] sequence).
+        let deferredLoopWarning = null;
         if (loopSeverity === 1) {
           this._loopNudges++;
-          logger.info(`Loop detected (severity 1, nudge ${this._loopNudges}) — injecting warning`);
-          this.messages.push({
-            role: "user",
-            content: "[Auto-hint] You are repeating the same tool calls without making progress. STOP and try a completely different approach. If you cannot accomplish the task, explain what's blocking you instead of retrying the same actions.",
-          });
+          logger.info(`Loop detected (severity 1, nudge ${this._loopNudges}) — injecting warning after tool results`);
+          deferredLoopWarning = "[Auto-hint] You are repeating the same tool calls without making progress. STOP and try a completely different approach. If you cannot accomplish the task, explain what's blocking you instead of retrying the same actions.";
         }
 
         // ── Execute tool calls ──
@@ -1233,6 +1235,15 @@ export class Agent extends EventEmitter {
         // Push tool results as messages
         for (const result of results) {
           this.messages.push({ role: "tool", content: JSON.stringify(result) });
+        }
+
+        // Inject deferred loop warning (must come after tool results to
+        // maintain valid message ordering for providers like Ollama)
+        if (deferredLoopWarning) {
+          this.messages.push({
+            role: "user",
+            content: deferredLoopWarning,
+          });
         }
 
         // Inject self-correction hints if tools failed
