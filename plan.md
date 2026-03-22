@@ -2,89 +2,55 @@
 
 ## Overview
 
-Integrate Anthropic's **programmatic tool calling** into smol-agent's Anthropic provider. This feature allows Claude to write Python code that calls tools programmatically within a code execution container, reducing latency and token consumption for multi-tool workflows.
+Implement **programmatic tool calling** in smol-agent with a dual approach:
 
-## Key Concepts from the API
+1. **Client-side code execution** (all providers): A `code_execution` tool that runs JS code in a VM sandbox with all registered tools available as async functions. Works with Ollama, OpenAI, Grok, and any other provider.
 
-1. **Code execution tool**: A special tool `{ type: "code_execution_20260120", name: "code_execution" }` sent in the tools array
-2. **`allowed_callers` field**: Each tool can specify `["code_execution_20260120"]` to allow programmatic calling, `["direct"]` (default), or both
-3. **New response content block types**:
-   - `server_tool_use` — Claude's code execution block (contains the Python code)
-   - `tool_use` with `caller` field — a tool call made programmatically from within code execution
-   - `code_execution_tool_result` — the final output of the code execution
-4. **Container**: Reusable sandbox container with an ID and expiration time
-5. **Message format**: When responding to programmatic tool calls, the response must contain **only** `tool_result` blocks
+2. **Anthropic-native server-side** (Anthropic only): When using compatible Claude models with `--programmatic-tools`, uses Anthropic's server-side `code_execution_20260120` with `allowed_callers` for optimal performance.
 
-## Implementation Plan
+## Implementation (Completed)
 
-### Step 1: Add `code_execution` tool to the Anthropic provider's tool formatting
+### Client-side: `src/tools/code_execution.js` (NEW)
+- Registers a `code_execution` tool in the tool registry
+- Executes JS code in a Node.js `vm.Context` sandbox
+- All registered tools available as `await toolName(args)` functions
+- Captures stdout/stderr, tracks tool calls made
+- 2-minute timeout, 50KB stdout cap
+- Prevents recursive calls (code_execution not available inside sandbox)
+- Security: runs in VM sandbox, tools still go through registry validation + jail directory
 
-**File**: `src/providers/anthropic.js` — `formatTools()`
+### Anthropic-native: `src/providers/anthropic.js` (MODIFIED)
+- `formatTools()` injects `code_execution_20260120` tool and adds `allowed_callers` to all tools
+- `chatStream()` handles `server_tool_use`, `code_execution_tool_result`, and `caller` field on `tool_use` blocks
+- `_convertMessages()` preserves `server_tool_use` blocks and `caller` metadata
+- `_parseResponseContent()` extracts new block types
+- Tracks container ID for reuse across turns
+- Only activates for compatible models (Opus 4.6, Sonnet 4.6, Sonnet 4.5, Opus 4.5)
 
-- When formatting tools, inject the code execution tool as the first item: `{ type: "code_execution_20260120", name: "code_execution" }`
-- Add `allowed_callers: ["code_execution_20260120"]` to each tool definition
-- Only do this for compatible models (claude-opus-4-6, claude-sonnet-4-6, claude-sonnet-4-5, claude-opus-4-5)
-- Add a constructor option `enableProgrammaticToolCalling` (default: true for compatible models)
+### Agent loop: `src/agent.js` (MODIFIED)
+- Imports and registers code_execution tool
+- Captures `serverToolUses` and `codeExecutionResults` from streaming events
+- Preserves metadata on assistant messages for Anthropic message conversion
+- System prompt updated to guide models to use code_execution for multi-tool workflows
 
-### Step 2: Handle new response content block types in streaming
+### Registry: `src/tools/registry.js` (MODIFIED)
+- `code_execution` added to CORE_TOOLS, DANGEROUS_TOOLS, and TOOL_CATEGORIES
+- Category: "execute" (requires approval)
 
-**File**: `src/providers/anthropic.js` — `chatStream()`
+### CLI: `src/index.js` (MODIFIED)
+- `--programmatic-tools` flag enables Anthropic server-side programmatic calling
+- `--no-programmatic-tools` disables it
+- Passed through provider factory to Anthropic provider
 
-- Handle `server_tool_use` content blocks (code execution blocks from Claude)
-  - Track the `id` as a code execution tool use ID
-  - Store the code being executed
-- Handle `tool_use` blocks with a `caller` field (programmatic tool calls)
-  - Parse these the same as regular tool_use but preserve the `caller` metadata
-- Handle `code_execution_tool_result` blocks (final output)
-  - Extract `stdout`, `stderr`, `return_code`, and `content`
-- Track the `container` field from the response for reuse
+### Provider factory: `src/providers/index.js` (MODIFIED)
+- Passes `programmaticToolCalling` option through to provider constructors
 
-### Step 3: Update message conversion for programmatic tool call responses
+### Tests: `test/unit/code-execution.test.js` (NEW)
+- 9 tests covering: basic execution, tool calling, multi-tool batching, loops, error handling, recursion prevention, stderr capture
 
-**File**: `src/providers/anthropic.js` — `_convertMessages()`
+## Design Decisions
 
-- When an assistant message contains `server_tool_use` blocks, preserve them as-is in the converted message
-- When a tool result is for a programmatic tool call (has a `caller` reference), format the response as only `tool_result` blocks (no text content mixed in)
-- Support the `container` field in API requests
-
-### Step 4: Update the agent loop to handle programmatic tool calls
-
-**File**: `src/agent.js` — `run()` method
-
-- Detect tool calls that have a `caller` field (programmatic calls from code execution)
-- Execute them the same way as regular tool calls (through the registry)
-- When building the response message, only include `tool_result` blocks for programmatic calls
-- Track the container ID for reuse across iterations
-- Add a new event `"code_execution"` for UI to show code execution progress
-- Handle `code_execution_tool_result` content in the response — treat it as informational text output
-
-### Step 5: Expose configuration
-
-**File**: `src/agent.js` — constructor and `_init()`
-
-- Add `enableProgrammaticToolCalling` option to Agent constructor
-- Pass it through to the Anthropic provider
-- Default to `true` when using a compatible Anthropic model
-
-**File**: `src/index.js` — CLI flag
-
-- Add `--programmatic-tools` / `--no-programmatic-tools` CLI flag
-
-### Step 6: Update the `anthropic-version` header
-
-**File**: `src/providers/anthropic.js` — `_headers()`
-
-- Keep using `2023-06-01` (the feature works with this version per the docs)
-
-## Files to Modify
-
-1. `src/providers/anthropic.js` — Core API integration (tool formatting, streaming, message conversion)
-2. `src/agent.js` — Agent loop changes for programmatic tool call handling
-3. `src/index.js` — CLI flag for enabling/disabling
-
-## Key Design Decisions
-
-- **`allowed_callers` strategy**: Use `["code_execution_20260120"]` for all tools by default when programmatic calling is enabled. This gives Claude maximum flexibility to batch tool calls in code.
-- **Container reuse**: Track the container ID from responses and pass it in subsequent requests within the same agent `run()` to maintain state.
-- **Backward compatibility**: Programmatic tool calling is opt-in via a flag and only activates for compatible Anthropic models. Non-Anthropic providers are unaffected.
-- **Tool approval**: Programmatic tool calls still go through the same approval system — even though they're invoked from code execution, the API surfaces them as regular `tool_use` blocks that we must fulfill.
+- **Dual approach**: Client-side VM for all providers, server-side for Anthropic. Client-side code_execution is always available as a core tool regardless of `--programmatic-tools` flag.
+- **JS not Python**: Client-side uses JavaScript (not Python) since smol-agent is a Node.js project and the VM module provides a natural sandbox.
+- **Tool approval preserved**: code_execution is a DANGEROUS_TOOL requiring approval. Individual tool calls within the sandbox still go through the registry's validation.
+- **Backward compatible**: No breaking changes. The code_execution tool is simply a new core tool available to all models.
