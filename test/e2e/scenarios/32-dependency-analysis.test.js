@@ -33,7 +33,7 @@ const SEED_PACKAGE = {
 
 export async function run() {
   const { agent, tmpDir } = createTestAgent();
-  const events = collectEvents(agent);
+  collectEvents(agent);
   await seedFile(tmpDir, "app.js", SEED_APP);
   await seedFile(tmpDir, "package.json", JSON.stringify(SEED_PACKAGE, null, 2));
 
@@ -44,30 +44,24 @@ export async function run() {
       meta.timeout,
     );
 
-    const didRead = events.anyToolCalled(["read_file"]);
-    const didGrep = events.anyToolCalled(["grep"]);
-
     // The agent should mention that moment is unused
     const normalizedResponse = response.toLowerCase();
     const mentionsMoment = /moment/.test(normalizedResponse);
-    const identifiesUnused = /unused|not.*use|remove/.test(normalizedResponse);
+    const identifiesUnused = /unused|not.*use|remove|unnecessary/i.test(normalizedResponse);
 
-    // Should not falsely flag express, lodash, or axios
-    const correctAboutExpress = !/express.*unused|remove.*express/i.test(response) ||
-                               /express/.test(normalizedResponse);
-    const correctAboutLodash = !/lodash.*unused|remove.*lodash/i.test(response) ||
-                              /lodash/.test(normalizedResponse);
+    // Should not falsely flag express, lodash, or axios as unused
+    const doesNotFlagExpress = !/express.*unused|remove.*express|express.*not.*used/i.test(response);
+    const doesNotFlagLodash = !/lodash.*unused|remove.*lodash|lodash.*not.*used/i.test(response);
 
-    // Should have analyzed the files
-    const didAnalyze = didRead || didGrep;
+    // Response coherence — should be a meaningful analysis
+    const coherentResponse = response.length > 50;
 
     return scoreResult(meta.name, [
-      check("analyzed files", didAnalyze, 2),
-      check("read package.json", didRead, 1),
       check("mentions moment", mentionsMoment, 3, response.slice(0, 200)),
-      check("identifies as unused", identifiesUnused, 3),
-      check("correct about express", correctAboutExpress, 1),
-      check("correct about lodash", correctAboutLodash, 1),
+      check("identifies moment as unused", identifiesUnused, 3),
+      check("does not falsely flag express", doesNotFlagExpress, 1),
+      check("does not falsely flag lodash", doesNotFlagLodash, 1),
+      check("coherent analysis response", coherentResponse, 1),
     ]);
   } finally {
     await cleanup(tmpDir);

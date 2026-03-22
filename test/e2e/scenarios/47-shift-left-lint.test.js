@@ -45,15 +45,15 @@ export async function run() {
       new Function(content);
       validSyntax = true;
     } catch {
-      // Also try as module syntax (export statements)
-      try {
-        // If it uses export, that's fine — just check for obvious syntax errors
-        validSyntax = !(/\bfunction\s*\(/.test(content) && content.includes("}{"));
-        // More robust: check that it has balanced braces
-        const opens = (content.match(/\{/g) || []).length;
-        const closes = (content.match(/\}/g) || []).length;
-        validSyntax = opens === closes;
-      } catch { /* keep false */ }
+      // Module syntax (export/import) can't be parsed by new Function.
+      // Fall back to structural checks: balanced braces and no obvious errors.
+      const opens = (content.match(/\{/g) || []).length;
+      const closes = (content.match(/\}/g) || []).length;
+      const balanced = opens === closes && opens > 0;
+      const parensOpen = (content.match(/\(/g) || []).length;
+      const parensClose = (content.match(/\)/g) || []).length;
+      const parensBalanced = parensOpen === parensClose;
+      validSyntax = balanced && parensBalanced;
     }
 
     const hasAdd = /function\s+add|const\s+add|export\s+(function|const)\s+add/.test(content);

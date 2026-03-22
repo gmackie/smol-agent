@@ -32,13 +32,19 @@ export async function run() {
 
     const content = (await readResult(tmpDir, "greet.js")) || "";
     const hasNewString = /hi there/i.test(content);
+    const noOldString = !content.includes("'hello'") && !content.includes('"hello"');
     const farewellOk = content.includes("bye");
     const stillValid = content.includes("function greet");
     const usedReplace = events.anyToolCalled(["replace_in_file", "write_file"]);
 
+    // Verify the farewell function's whitespace was preserved (the point of this test)
+    const farewellPreserved = content.includes("function farewell") && /\treturn/.test(content);
+
     return scoreResult(meta.name, [
       check("return value changed", hasNewString, 3, content.slice(0, 160)),
+      check("old string removed", noOldString, 1),
       check("farewell preserved", farewellOk, 2),
+      check("farewell whitespace intact", farewellPreserved, 1),
       check("greet function intact", stillValid, 2),
       check("used edit tool", usedReplace, 1),
     ]);

@@ -27,7 +27,7 @@ export async function run() {
   await seedFile(tmpDir, "config-io.js", SEED_CODE);
 
   try {
-    const _response = await runWithTimeout(
+    await runWithTimeout(
       agent,
       "Refactor these functions to use async/await with fs.promises instead of sync operations",
       meta.timeout,
@@ -50,6 +50,9 @@ export async function run() {
     const readIsAsync = /async\s+function\s+readConfig/.test(content);
     const writeIsAsync = /async\s+function\s+writeConfig/.test(content);
 
+    // Verify sync operations were actually removed
+    const noSyncOps = !content.includes("readFileSync") && !content.includes("writeFileSync");
+
     // Functions still exported
     const stillExported = /module\.exports.*readConfig.*writeConfig|exports\.\w+/.test(content);
 
@@ -61,6 +64,7 @@ export async function run() {
       check("uses fs.promises", usesFsPromises, 2),
       check("readConfig is async", readIsAsync, 1),
       check("writeConfig is async", writeIsAsync, 1),
+      check("sync operations removed", noSyncOps, 1),
       check("functions still exported", stillExported, 1),
     ]);
   } finally {
