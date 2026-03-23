@@ -20,7 +20,7 @@ export async function run() {
   await seedFile(tmpDir, "project/data/config.json", '{"key": "value", "debug": false}\n');
 
   try {
-    const _response = await runWithTimeout(
+    await runWithTimeout(
       agent,
       `Create a Node.js script called dir-stats.js that recursively walks a directory and outputs stats:
 - Total number of files
@@ -41,9 +41,15 @@ After creating it, run it on the "project" directory.`,
       /import.*["'](?:node:)?fs["']/.test(script) ||
       /fs\./.test(script);
 
-    // Has recursive approach (readdirSync/readdir with recursive logic or manual recursion)
-    const hasRecursion = /readdir/.test(script) || /recursive/.test(script) ||
-      /walk|traverse|scan/.test(script) || /function.*dir/.test(script);
+    // Has recursive approach — must actually read directory entries (not just have the word "recursive")
+    const hasReaddir = /readdir(Sync)?\s*\(/.test(script);
+    const hasRecursion = hasReaddir && (
+      // Self-calling function or recursive: true option
+      /function\s+\w+.*\{[\s\S]*?\1\s*\(/.test(script) ||
+      /recursive:\s*true/.test(script) ||
+      // Or uses a walk/traverse pattern
+      /walk|traverse|scan|isDirectory/.test(script)
+    );
 
     const didWrite = events.anyToolCalled(["write_file"]);
     const ranScript = events.anyToolCalled(["run_command"]);
@@ -51,9 +57,12 @@ After creating it, run it on the "project" directory.`,
     // Check output contains file count (we seeded 7 files)
     const runResults = events.resultsFor("run_command")
       .map(r => [r?.stdout, r?.stderr, r?.content].filter(Boolean).join("\n")).join("\n");
-    const hasFileCount = /\b7\b/.test(runResults) || /files?\s*:\s*\d+/i.test(runResults);
-    const hasSizeInfo = /\b(bytes?|[Ss]ize|[Tt]otal)\b/.test(runResults) && /\d+/.test(runResults);
-    const hasLargestFile = /largest|biggest|max/i.test(runResults) || /\.js|\.md|\.json/.test(runResults);
+    // Check output reports file count — we seeded 7 files, accept nearby counts (6-8)
+    const hasFileCount = /\b[6-8]\b/.test(runResults) && /files?/i.test(runResults);
+    // Must report size with a unit (bytes, KB, etc.) alongside an actual number
+    const hasSizeInfo = /\d+\s*(bytes?|[Kk][Bb]|[Bb])/i.test(runResults) || /size\s*:\s*\d+/i.test(runResults);
+    // Largest file must name a specific file
+    const hasLargestFile = (/largest|biggest|max/i.test(runResults) && /\.\w{2,4}\b/.test(runResults));
 
     return scoreResult(meta.name, [
       check("script created", scriptExists, 2),

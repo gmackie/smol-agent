@@ -22,14 +22,23 @@ export async function run() {
 
     const mentionsApp = /app\.js/i.test(response);
     const mentionsConfig = /config\.js/i.test(response);
-    const correctlyExcludes =
-      !/utils\.js/i.test(response) || /no match|not found|does not contain/i.test(response);
+
+    // utils.js should either not be mentioned, or explicitly called out as not matching
+    const doesNotMentionUtils = !/utils\.js/i.test(response);
+    const explicitlyExcludesUtils = /utils\.js.*(no|not|doesn't|does not|without)/i.test(response) ||
+      /no.*match.*utils/i.test(response);
+
+    // Check grep tool results to verify correct files were found
+    const grepResults = events.resultsFor("grep");
+    const grepFoundFiles = JSON.stringify(grepResults);
+    const grepFoundApp = /app\.js/i.test(grepFoundFiles);
 
     return scoreResult(meta.name, [
       check("mentions app.js", mentionsApp, 2, response.slice(0, 200)),
       check("mentions config.js", mentionsConfig, 2),
-      check("correctly excludes utils.js", correctlyExcludes, 2),
+      check("correctly excludes utils.js", doesNotMentionUtils || explicitlyExcludesUtils, 2),
       check("used grep tool", events.anyToolCalled(["grep"]), 1),
+      check("grep found correct files", grepFoundApp, 1, grepFoundFiles.slice(0, 150)),
     ]);
   } finally {
     await cleanup(tmpDir);

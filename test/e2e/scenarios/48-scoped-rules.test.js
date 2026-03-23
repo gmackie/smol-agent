@@ -14,7 +14,7 @@ export const meta = { name: "scoped-rules", timeout: config.timeouts.medium };
 
 export async function run() {
   const { agent, tmpDir } = createTestAgent();
-  collectEvents(agent);
+  const events = collectEvents(agent);
 
   // Seed subdirectory rules requiring snake_case function names
   await seedFile(tmpDir, "lib/AGENT.md", `# Conventions for lib/
@@ -52,6 +52,13 @@ module.exports = { get_timestamp };
     const hasEmailFn = /email|mail/i.test(content);
     const hasPositiveFn = /positive|is_positive|isPositive/i.test(content);
 
+    // Verify the agent discovered the AGENT.md rules
+    const readCalls = events.tool_calls.filter(tc => tc.name === "read_file");
+    const readAgentMd = readCalls.some(tc => {
+      const args = tc.args || tc.arguments || {};
+      return /AGENT\.md/i.test(args.filePath || "");
+    });
+
     return scoreResult(meta.name, [
       check("file exists", exists, 2),
       check("uses snake_case", hasSnakeCase && !hasCamelCase, 3, content.slice(0, 200)),
@@ -59,6 +66,7 @@ module.exports = { get_timestamp };
       check("has comment header", hasHeaderComment, 1),
       check("has email validator", hasEmailFn, 1),
       check("has positive checker", hasPositiveFn, 1),
+      check("discovered AGENT.md rules", readAgentMd, 1),
     ]);
   } finally {
     await cleanup(tmpDir);

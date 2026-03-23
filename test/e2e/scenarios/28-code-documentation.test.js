@@ -31,7 +31,7 @@ export async function run() {
   await seedFile(tmpDir, "pricing.js", SEED_CODE);
 
   try {
-    const _response = await runWithTimeout(
+    await runWithTimeout(
       agent,
       "Add JSDoc comments to the calculateDiscount function documenting params and return value",
       meta.timeout,
@@ -47,9 +47,14 @@ export async function run() {
     const hasParamDocs = /@param/.test(content);
     const hasReturnDoc = /@returns?/.test(content);
 
-    // Count documented params
+    // Count documented params — should document all 3 (price, customerType, quantity)
     const paramMatches = content.match(/@param/g);
     const hasAllParams = paramMatches && paramMatches.length >= 3;
+
+    // Verify the params documented match the actual function params
+    const docsPriceParam = /@param\s*\{[^}]*\}\s*price/.test(content) || /@param\s+price/.test(content);
+    const docsCustomerParam = /@param\s*\{[^}]*\}\s*customerType/.test(content) || /@param\s+customerType/.test(content);
+    const docsQuantityParam = /@param\s*\{[^}]*\}\s*quantity/.test(content) || /@param\s+quantity/.test(content);
 
     // Function still works
     const functionIntact = /function calculateDiscount\s*\(price,\s*customerType,\s*quantity\)/.test(content);
@@ -59,8 +64,9 @@ export async function run() {
       check("read source file", didRead, 1),
       check("made edits", didEdit, 1),
       check("added JSDoc comment", hasJSDoc, 2, content.slice(0, 200)),
-      check("documented params", hasParamDocs, 2),
+      check("has @param tags", hasParamDocs, 1),
       check("documented all 3 params", hasAllParams, 2, `found ${paramMatches?.length || 0} @param tags`),
+      check("documents price param by name", docsPriceParam, 1),
       check("documented return value", hasReturnDoc, 2),
       check("function signature preserved", functionIntact, 1),
       check("logic unchanged", logicPreserved, 1),

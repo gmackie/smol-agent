@@ -70,7 +70,7 @@ export async function run() {
   await seedFile(tmpDir, "test_linked_list.py", SEED_TEST);
 
   try {
-    const _response = await runWithTimeout(
+    await runWithTimeout(
       agent,
       "There's a test file test_linked_list.py that tests a LinkedList class. Implement linked_list.py so that all the tests pass. Run the tests to verify.",
       meta.timeout,
@@ -79,11 +79,12 @@ export async function run() {
     const content = (await readResult(tmpDir, "linked_list.py")) || "";
     const created = fileExists(tmpDir, "linked_list.py");
     const hasClass = /class\s+LinkedList/.test(content);
-    const hasAppend = /def\s+append/.test(content);
-    const hasPrepend = /def\s+prepend/.test(content);
-    const hasToList = /def\s+to_list/.test(content);
-    const hasFind = /def\s+find/.test(content);
-    const hasDelete = /def\s+delete/.test(content);
+    // Verify actual method definitions with self parameter (not just keywords)
+    const hasAppend = /def\s+append\s*\(\s*self/.test(content);
+    const hasPrepend = /def\s+prepend\s*\(\s*self/.test(content);
+    const hasToList = /def\s+to_list\s*\(\s*self/.test(content);
+    const hasFind = /def\s+find\s*\(\s*self/.test(content);
+    const hasDelete = /def\s+delete\s*\(\s*self/.test(content);
     const hasAllMethods = hasAppend && hasPrepend && hasToList && hasFind && hasDelete;
 
     const didWrite = events.anyToolCalled(["write_file"]);

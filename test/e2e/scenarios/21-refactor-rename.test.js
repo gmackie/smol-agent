@@ -48,15 +48,34 @@ export async function run() {
     const utilsRenamed = utils.includes("sumPrices") && !utils.includes("calculateTotal");
     const mainRenamed = main.includes("sumPrices") && !main.includes("calculateTotal");
     const formatTotalPreserved = utils.includes("formatTotal") && main.includes("formatTotal");
-    const editedBoth = events.tool_calls.filter(
-      (tc) => (tc.name === "replace_in_file" || tc.name === "write_file"),
-    ).length >= 2;
+
+    // Verify both specific files were edited (not just any 2 edits)
+    const editCalls = events.tool_calls.filter(
+      (tc) => tc.name === "replace_in_file" || tc.name === "write_file",
+    );
+    const editedUtils = editCalls.some(tc => {
+      const args = tc.args || tc.arguments || {};
+      return /utils\.js/i.test(args.filePath || "");
+    });
+    const editedMain = editCalls.some(tc => {
+      const args = tc.args || tc.arguments || {};
+      return /main\.js/i.test(args.filePath || "");
+    });
+
+    // Verify the function definition was renamed (not just the name string)
+    const hasSumPricesDef = /function\s+sumPrices|const\s+sumPrices/.test(utils);
+
+    // formatTotal should still call sumPrices (previously called calculateTotal)
+    const formatCallsRenamed = /sumPrices\s*\(/.test(utils);
 
     return scoreResult(meta.name, [
       check("utils.js renamed", utilsRenamed, 3, utils.slice(0, 160)),
       check("main.js renamed", mainRenamed, 3, main.slice(0, 160)),
+      check("sumPrices function defined", hasSumPricesDef, 1),
+      check("formatTotal calls sumPrices", formatCallsRenamed, 1),
       check("formatTotal preserved", formatTotalPreserved, 2),
-      check("edited both files", editedBoth, 1),
+      check("edited utils.js", editedUtils, 1),
+      check("edited main.js", editedMain, 1),
     ]);
   } finally {
     await cleanup(tmpDir);

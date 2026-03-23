@@ -35,15 +35,20 @@ export async function run() {
       response.includes("(Timeout exceeded)") ||
       response.includes("cancelled");
 
-    // If the model responded before cancel fired, that's still a pass —
-    // the important thing is no hang and no crash.
-    const noHang = true; // we got here, so it didn't hang
     const noCrash = events.errors.length === 0;
 
+    // Measure wall-clock time — if cancel worked, should resolve much faster
+    // than the safety timeout (15s). If it took >14s, cancel probably didn't fire.
+    const resolvedQuickly = Date.now() - (events.timeline[0]?.ts || 0) < 14000;
+
+    // The response should either be a cancel marker or actual content (if model finished first)
+    const hasResponse = response.length > 0;
+
     return scoreResult(meta.name, [
-      check("no hang (resolved)", noHang, 3),
+      check("resolved without hanging", hasResponse, 3, response.slice(0, 120)),
       check("no crash/errors", noCrash, 3, events.errors.map((e) => e.message)),
-      check("cancelled or completed", cancelled || response.length > 0, 2, response.slice(0, 120)),
+      check("cancelled or completed normally", cancelled || response.length > 20, 2, response.slice(0, 120)),
+      check("resolved within safety timeout", resolvedQuickly, 1),
     ]);
   } finally {
     await cleanup(tmpDir);

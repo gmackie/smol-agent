@@ -80,13 +80,13 @@ module.exports = { authMiddleware, validateUserMiddleware };
 
 export async function run() {
   const { agent, tmpDir } = createTestAgent();
-  const _events = collectEvents(agent);
+  collectEvents(agent);
   await seedFile(tmpDir, "routes.js", SEED_ROUTES);
   await seedFile(tmpDir, "handlers.js", SEED_HANDLERS);
   await seedFile(tmpDir, "middleware.js", SEED_MIDDLEWARE);
 
   try {
-    const _response = await runWithTimeout(
+    await runWithTimeout(
       agent,
       `The files routes.js, handlers.js, and middleware.js all duplicate the same validateEmail and sanitizeInput helper functions. Extract them into a shared utils.js file and update all three files to import from utils.js instead. Make sure the existing functionality still works.`,
       meta.timeout,

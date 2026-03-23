@@ -82,7 +82,7 @@ export async function run() {
   await seedFile(tmpDir, "test_emitter.py", SEED_TEST);
 
   try {
-    const _response = await runWithTimeout(
+    await runWithTimeout(
       agent,
       "There's a test file test_emitter.py that tests a custom EventEmitter class. Implement emitter.py with the EventEmitter class so that all tests pass. Run the tests to verify.",
       meta.timeout,
@@ -105,8 +105,9 @@ export async function run() {
       .map(r => [r?.stdout, r?.stderr, r?.content].filter(Boolean).join("\n")).join("\n");
     const testsPass = /OK\b/.test(runResults) && !/FAIL/.test(runResults);
 
-    // Check for listener storage mechanism (dict, defaultdict, etc.)
-    const hasListenerStorage = /dict|defaultdict|\{\}|self\._/.test(content);
+    // Check for listener storage mechanism — must use a dict or similar structure in __init__
+    const initSection = content.match(/def\s+__init__[\s\S]*?(?=\n\s*def\s)/)?.[0] || "";
+    const hasListenerStorage = /self\.\w+\s*=\s*(\{|dict|defaultdict|collections)/.test(initSection);
 
     return scoreResult(meta.name, [
       check("created emitter.py", created, 2),

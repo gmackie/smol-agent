@@ -14,7 +14,7 @@ export const meta = { name: "shared-coding-rules", timeout: config.timeouts.medi
 
 export async function run() {
   const { agent, tmpDir } = createTestAgent();
-  collectEvents(agent);
+  const events = collectEvents(agent);
 
   // Seed a .cursorrules file with specific conventions
   await seedFile(tmpDir, ".cursorrules", `# Project Coding Rules
@@ -41,12 +41,20 @@ export async function run() {
     const hasParseJSON = /parseJSON/.test(content);
     const hasExport = /module\.exports|export\s/.test(content);
 
+    // Check for "Error:" prefix in error messages (from .cursorrules)
+    const hasErrorPrefix = /["']Error:/.test(content) || /`Error:/.test(content);
+
+    // Verify agent used write_file to create the file
+    const usedWrite = events.anyToolCalled(["write_file"]);
+
     return scoreResult(meta.name, [
       check("file exists", exists, 2),
       check("has parseJSON function", hasParseJSON, 2),
       check("uses const declarations", usesConst && !usesLetVar, 2, content.slice(0, 200)),
       check("has JSDoc annotation", hasJSDoc, 2),
       check("has export", hasExport, 1),
+      check("error messages use Error: prefix", hasErrorPrefix, 1),
+      check("used write tool", usedWrite, 1),
     ]);
   } finally {
     await cleanup(tmpDir);

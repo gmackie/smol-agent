@@ -27,22 +27,41 @@ Then run main.js and tell me the output.`,
     const mainExists = fileExists(tmpDir, "main.js");
 
     const calcContent = (await readResult(tmpDir, "src/calculator.js")) || "";
-    const hasAllFns = /add/.test(calcContent) && /subtract/.test(calcContent) && /multiply/.test(calcContent);
+    const fmtContent = (await readResult(tmpDir, "src/formatter.js")) || "";
+    const mainContent = (await readResult(tmpDir, "main.js")) || "";
+
+    // Verify calculator has actual function definitions, not just the word "add"
+    const hasAddFn = /function\s+add|const\s+add\s*=|add\s*[:(]/.test(calcContent);
+    const hasSubtractFn = /function\s+subtract|const\s+subtract\s*=|subtract\s*[:(]/.test(calcContent);
+    const hasMultiplyFn = /function\s+multiply|const\s+multiply\s*=|multiply\s*[:(]/.test(calcContent);
+    const hasAllFns = hasAddFn && hasSubtractFn && hasMultiplyFn;
+
+    // Verify formatter has formatResult function
+    const hasFormatResult = /function\s+formatResult|const\s+formatResult\s*=|formatResult/.test(fmtContent);
+
+    // Verify main.js imports from the other modules
+    const mainImportsCalc = /require\s*\(.*calculator|import.*calculator/i.test(mainContent);
 
     const files = await listFiles(tmpDir);
     const fileCount = files.filter((f) => f.endsWith(".js")).length;
 
-    const has15 = response.includes("15");
+    // Check that command output (not just response) contains 15
+    const runResults = events.resultsFor("run_command")
+      .map(r => [r?.stdout, r?.output, r?.content].filter(Boolean).join("\n")).join("\n");
+    const outputHas15 = /\b15\b/.test(runResults);
+    const responseHas15 = response.includes("15");
     const ranIt = events.anyToolCalled(["run_command"]);
 
     return scoreResult(meta.name, [
       check("calculator.js exists", calcExists, 2),
-      check("formatter.js exists", fmtExists, 2),
-      check("main.js exists", mainExists, 2),
-      check("calculator has all functions", hasAllFns, 2, calcContent.slice(0, 160)),
+      check("formatter.js exists", fmtExists, 1),
+      check("main.js exists", mainExists, 1),
+      check("calculator has function definitions", hasAllFns, 2, calcContent.slice(0, 160)),
+      check("formatter has formatResult", hasFormatResult, 1),
+      check("main.js imports calculator", mainImportsCalc, 1),
       check("created 3+ JS files", fileCount >= 3, 1, `${fileCount} JS files: ${files.join(", ")}`),
       check("ran the program", ranIt, 2),
-      check("output contains 15", has15, 3, response.slice(0, 160)),
+      check("command output contains 15", outputHas15 || responseHas15, 3, runResults.slice(-160) || response.slice(0, 160)),
     ]);
   } finally {
     await cleanup(tmpDir);

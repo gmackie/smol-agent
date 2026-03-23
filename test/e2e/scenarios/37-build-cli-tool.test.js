@@ -11,7 +11,7 @@ export async function run() {
   const events = collectEvents(agent);
 
   try {
-    const _response = await runWithTimeout(
+    await runWithTimeout(
       agent,
       `Create a bash script called wordcount.sh that works like a simplified 'wc' command.
 It should:
@@ -25,7 +25,7 @@ After creating the script, create a sample.txt file with some text content (at l
     );
 
     const script = (await readResult(tmpDir, "wordcount.sh")) || "";
-    const _sample = (await readResult(tmpDir, "sample.txt")) || "";
+    const sampleContent = (await readResult(tmpDir, "sample.txt")) || "";
 
     const scriptExists = fileExists(tmpDir, "wordcount.sh");
     const sampleExists = fileExists(tmpDir, "sample.txt");
@@ -43,7 +43,8 @@ After creating the script, create a sample.txt file with some text content (at l
     const computesCounts = /wc\b/.test(script) || /grep\s+-c/.test(script) ||
       /awk/.test(script) || /\$\(.*cat/.test(script);
 
-    const _didWrite = events.anyToolCalled(["write_file"]);
+    // Verify sample.txt has enough content for meaningful counts
+    const sampleHasContent = sampleContent.split("\n").length >= 3;
     const ranCommand = events.anyToolCalled(["run_command"]);
 
     // Check that the script was actually executed and produced count output
@@ -59,6 +60,7 @@ After creating the script, create a sample.txt file with some text content (at l
       check("handles file argument", handlesArg, 2, script.slice(0, 200)),
       check("has error checking", hasErrorCheck, 2),
       check("computes counts", computesCounts, 2, script.slice(0, 300)),
+      check("sample.txt has 3+ lines", sampleHasContent, 1),
       check("ran the script", ranCommand, 2),
       check("output contains counts", outputHasCounts, 3, runResults.slice(-200)),
     ]);

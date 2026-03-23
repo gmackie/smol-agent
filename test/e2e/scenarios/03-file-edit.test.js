@@ -33,6 +33,7 @@ export async function run() {
       check("port changed to 8080", parsed?.port === 8080, 3, parsed?.port),
       check("valid JSON", validJson, 2, raw.slice(0, 80)),
       check("host preserved", parsed?.host === "localhost", 2, parsed?.host),
+      check("debug preserved", parsed?.debug === true, 1, parsed?.debug),
       check("used edit tool", events.anyToolCalled(["replace_in_file", "write_file"]), 1),
     ]);
   } finally {

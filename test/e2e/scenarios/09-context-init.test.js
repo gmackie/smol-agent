@@ -8,7 +8,7 @@ export const meta = { name: "context-init", timeout: config.timeouts.simple };
 
 export async function run() {
   const { agent, tmpDir } = createTestAgent();
-  const _events = collectEvents(agent);
+  const events = collectEvents(agent);
   await seedFile(
     tmpDir,
     "package.json",
@@ -23,9 +23,13 @@ export async function run() {
       meta.timeout,
     );
 
+    // Verify the agent actually explored the project files
+    const didExplore = events.anyToolCalled(["read_file", "list_files"]);
+
     return scoreResult(meta.name, [
       check("identifies Node.js/JavaScript", /node|javascript|js|npm/i.test(response), 3, response.slice(0, 160)),
       check("mentions package.json", /package\.json/i.test(response), 1),
+      check("explored project files", didExplore, 2),
     ]);
   } finally {
     await cleanup(tmpDir);

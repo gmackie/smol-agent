@@ -38,22 +38,28 @@ export async function run() {
     );
 
     const content = (await readResult(tmpDir, "fib.js")) || "";
-    // The fix: i < n → i <= n (or equivalent restructuring)
-    const bugFixed = content.includes("<= n") || content.includes("< n + 1") ||
-      // Model might rewrite the loop entirely — check if the algorithm is correct
-      (!content.includes("i < n;") && content.includes("fibonacci"));
+
+    // The fix: the original bug is "i < n" which should be "i <= n"
+    const hasCorrectBound = /i\s*<=\s*n/.test(content) || /i\s*<\s*n\s*\+\s*1/.test(content);
+    const originalBugRemoved = !/for\s*\([^)]*i\s*<\s*n\s*;/.test(content);
+    const bugFixed = hasCorrectBound || (originalBugRemoved && /fibonacci/.test(content));
 
     const didRead = events.anyToolCalled(["read_file"]);
     const didEdit = events.anyToolCalled(["replace_in_file", "write_file"]);
     const didRun = events.anyToolCalled(["run_command"]);
-    const mentionsEight = response.includes("8");
+
+    // Check command output for "8", not just the response (which could say "8" in other context)
+    const runResults = events.resultsFor("run_command")
+      .map(r => [r?.stdout, r?.output, r?.content].filter(Boolean).join("\n")).join("\n");
+    const outputHasEight = /\b8\b/.test(runResults);
+    const responseHasEight = /fib.*8|fibonacci.*8|\b8\b/.test(response);
 
     return scoreResult(meta.name, [
-      check("bug fixed", bugFixed, 3, content.match(/for\s*\([^)]+\)/)?.[0] || content.slice(0, 120)),
+      check("bug fixed (loop bound corrected)", bugFixed, 3, content.match(/for\s*\([^)]+\)/)?.[0] || content.slice(0, 120)),
       check("read file first", didRead, 1),
       check("edited file", didEdit, 2),
       check("ran to verify", didRun, 2),
-      check("response mentions correct answer 8", mentionsEight, 2, response.slice(0, 160)),
+      check("output shows correct answer 8", outputHasEight || responseHasEight, 2, (runResults || response).slice(0, 160)),
     ]);
   } finally {
     await cleanup(tmpDir);
