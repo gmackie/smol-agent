@@ -136,6 +136,14 @@ export class BaseLLMProvider {
     return response.message?.content || "";
   }
 
+  /**
+   * Check if this provider/model supports vision (image inputs).
+   * Override in subclasses for provider-specific detection.
+   */
+  supportsVision() {
+    return false;
+  }
+
   // ── Rate limiting (shared) ──────────────────────────────────────
 
   _getRateLimiter() {

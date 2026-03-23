@@ -529,4 +529,18 @@ export class AnthropicProvider extends BaseLLMProvider {
       return [];
     }
   }
+
+  /**
+   * Check if this model supports vision (image inputs).
+   * Claude 3+ models support vision. Claude 2 and earlier do not.
+   */
+  supportsVision() {
+    const model = this._model.toLowerCase();
+    // Claude 2 and earlier do not support vision
+    if (model.startsWith('claude-2') || model.startsWith('claude-1') || model === 'claude-2' || model === 'claude-1') {
+      return false;
+    }
+    // All Claude 3+ models support vision
+    return true;
+  }
 }

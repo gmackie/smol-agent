@@ -356,4 +356,34 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
       return [];
     }
   }
+
+  /**
+   * Check if this model supports vision (image inputs).
+   * Vision-capable models for OpenAI-compatible providers include:
+   *   - OpenAI: gpt-4o, gpt-4-turbo, gpt-4-vision, gpt-4.1, o1
+   *   - Grok: all grok models support vision
+   *   - Gemini: all gemini models support vision
+   */
+  supportsVision() {
+    const model = this._model.toLowerCase();
+    // Gemini models all support vision
+    if (this._providerName === 'gemini' || model.includes('gemini')) {
+      return true;
+    }
+    // Grok models all support vision
+    if (this._providerName === 'grok' || model.includes('grok')) {
+      return true;
+    }
+    // OpenAI vision models
+    if (model.includes('gpt-4o') || model.includes('gpt-4-turbo') || 
+        model.includes('gpt-4-vision') || model.includes('gpt-4.1') ||
+        model.startsWith('o1') || model.startsWith('o3') || model.startsWith('o4')) {
+      return true;
+    }
+    // Claude models via OpenAI-compatible endpoints support vision
+    if (model.includes('claude')) {
+      return true;
+    }
+    return false;
+  }
 }

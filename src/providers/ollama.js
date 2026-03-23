@@ -150,6 +150,16 @@ export class OllamaProvider extends BaseLLMProvider {
   }
 
   /**
+   * Check if this model supports vision (image inputs).
+   * Vision-capable Ollama models include: llava, bakllava, moondream, pixtral, gemma3
+   */
+  supportsVision() {
+    const model = this._model.toLowerCase();
+    const visionModels = ['llava', 'bakllava', 'moondream', 'pixtral', 'gemma3', 'minicpm-v', 'xgen', 'llava-next', 'llava-v1.6', 'vila'];
+    return visionModels.some(vm => model.includes(vm));
+  }
+
+  /**
    * Check if a specific model is available on this Ollama host.
    */
   async hasModel(modelName) {
