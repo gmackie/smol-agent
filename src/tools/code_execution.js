@@ -140,7 +140,7 @@ register("code_execution", {
     },
   },
   core: true,
-  async execute({ code }, { cwd: _cwd } = {}) {
+  async execute({ code }, { cwd: _cwd, eventEmitter } = {}) {
     if (!code || typeof code !== "string") {
       return { error: "code must be a non-empty string" };
     }
@@ -156,8 +156,22 @@ register("code_execution", {
     const { context, getOutput } = buildSandbox(allTools, {
       onToolCall: (name, args) => {
         toolCallLog.push({ name, args, timestamp: Date.now() });
+        // Emit event for UI visibility
+        if (eventEmitter) {
+          eventEmitter.emit("CodeExecToolCall", { name, args });
+        }
+      },
+      onToolResult: (name, args, result) => {
+        if (eventEmitter) {
+          eventEmitter.emit("CodeExecToolResult", { name, args, result });
+        }
       },
     });
+
+    // Emit event for UI visibility when code execution starts
+    if (eventEmitter) {
+      eventEmitter.emit("CodeExecStart", { code });
+    }
 
     try {
       // Wrap in an async IIFE so top-level await works

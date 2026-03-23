@@ -16,7 +16,8 @@ smol-agent gives a local language model the tools it needs to read, write, and e
 - [Usage](#usage)
 - [Tools](#tools)
 - [Progressive Tool Discovery](#progressive-tool-discovery)
-- [Programmatic Tool Calling](#programmatic-tool-calling)
+- [Code Execution Tool](#code-execution-tool)
+- [Server-Side Programmatic Tool Calling (Anthropic)](#server-side-programmatic-tool-calling-anthropic)
 - [Context Management](#context-management)
 - [Context Injection](#context-injection)
 - [Persistent Memory](#persistent-memory)
@@ -310,7 +311,6 @@ smol-agent "add input validation to src/api.js"
 | `-H, --host <url>` | Provider host/base URL (default: provider-specific) |
 | `--api-key <key>` | API key for cloud providers (or use env vars) |
 | `-d, --directory <path>` | Set working directory and jail boundary (default: cwd) |
-| `--all-tools` | Expose all tools (auto-detected for 30B+ models) |
 | `--auto-approve` | Skip approval prompts for write/command tools (alias: `--yolo`) |
 | `--acp` | Run as ACP (Agent Client Protocol) server over stdio |
 | `--self-update` | Update smol-agent to the latest version |
@@ -379,7 +379,7 @@ The agent has access to the following tools:
 
 ## Progressive Tool Discovery
 
-smol-agent uses a progressive tool discovery system to improve context efficiency. Instead of loading all 45+ tools into the context window at once (which wastes tokens and confuses smaller models), tools are organized into groups and unlocked on demand.
+smol-agent uses a progressive tool discovery system to improve context efficiency. Instead of loading all 45+ tools into the context window at once, tools are organized into groups and unlocked on demand.
 
 ### How It Works
 
@@ -410,15 +410,63 @@ discover_tools({ groups: ["plan", "memory"] })       // activate groups
 discover_tools({ groups: [], list: true })            // list all available groups
 ```
 
-**Configuration** — Pass `coreToolsOnly: false` to enable progressive discovery (automatic for 30B+ models), or `--all-tools` to expose everything at once.
+**Note** — All models now use progressive discovery by default.
 
 ### Why This Matters
 
 Progressive discovery reduces context bloat by ~60-70% for typical sessions. Most tasks only need the starter tools. By loading additional tools lazily, the agent preserves context window capacity for actual work — file contents, code analysis, and conversation history.
 
-## Programmatic Tool Calling
+## Code Execution Tool
 
-When using the Anthropic provider with supported Claude models, smol-agent can enable **server-side programmatic tool calling**. This lets Claude execute Python code on Anthropic's servers and invoke smol-agent's tools from within that code execution sandbox.
+The `code_execution` tool allows the agent to run JavaScript code that calls other tools programmatically. This enables batch operations, loops, and result processing — all in a single turn without multiple round-trips to the LLM.
+
+### How It Works
+
+```
+Agent writes JS code → Runs in sandboxed VM → Tools execute outside sandbox
+                                                ↓
+                                          Results returned to sandbox
+                                                ↓
+                                          console.log() output sent back to agent
+```
+
+The sandbox is isolated (no direct filesystem or network access), but **all registered tools are available as async functions**:
+
+```javascript
+// Example: Batch read multiple files and count lines
+const files = await list_files({ pattern: "src/**/*.js" });
+for (const f of files.slice(0, 5)) {
+  const content = await read_file({ filePath: f });
+  console.log(f, content.split('\n').length);
+}
+```
+
+```javascript
+// Example: Search and aggregate
+const results = await grep({ pattern: "TODO", path: "src/" });
+const todos = results.split('\n').length;
+console.log(`Found ${todos} TODOs`);
+```
+
+### Key Features
+
+- **Multi-tool workflows** — Call multiple tools in one turn
+- **Loops and logic** — Iterate over results, filter, aggregate
+- **Token efficient** — Only final `console.log()` output returns to the model (not intermediate tool results)
+- **Works with all providers** — Ollama, OpenAI, Anthropic, Grok, Groq, Gemini
+- **2-minute timeout** — Long-running operations are capped
+
+### Sandboxed Environment
+
+Available globals: `console`, `JSON`, `Math`, `Date`, `Array`, `Object`, `Map`, `Set`, `RegExp`, `Error`, `Promise`, `setTimeout`, `clearTimeout`
+
+All tools are callable as async functions: `read_file()`, `write_file()`, `grep()`, `run_command()`, etc.
+
+---
+
+## Server-Side Programmatic Tool Calling (Anthropic)
+
+When using the Anthropic provider with supported Claude models, smol-agent can also enable **server-side programmatic tool calling**. This lets Claude execute Python code on Anthropic's servers and invoke smol-agent's tools from within that code execution sandbox.
 
 ### Supported Models
 

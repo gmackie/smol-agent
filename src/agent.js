@@ -277,9 +277,9 @@ export class Agent extends EventEmitter {
     this.running = false;
     this._initialized = false;
     this.abortController = null;
-    // When true, only expose ~7 core tools to the model (better for <30B models).
-    // When false, expose all tools (fine for 30B+ models).
-    this.coreToolsOnly = coreToolsOnly ?? true;
+    // When false, all tools are exposed with progressive discovery.
+    // The --all-tools flag is no longer needed as all models get the same tools.
+    this.coreToolsOnly = coreToolsOnly ?? false;
 
     // Context management
     this.contextManager = new ContextManager(this.maxTokens);
@@ -316,12 +316,10 @@ export class Agent extends EventEmitter {
     this._architectMode = false;
 
     // Progressive tool discovery — start with starter groups, unlock more on demand.
-    // When coreToolsOnly is true (small models), progressive discovery is disabled
-    // and the agent only gets the 7 core tools as before.
-    // When coreToolsOnly is false (large models/cloud), progressive discovery is
-    // active: the agent starts with starter groups + discover_tools meta-tool,
+    // All models now use progressive discovery with the same tool set.
+    // The agent starts with starter groups + discover_tools meta-tool,
     // and can unlock additional groups as needed.
-    this._progressiveDiscovery = !this.coreToolsOnly;
+    this._progressiveDiscovery = true;
     this._activeToolGroups = new Set(registry.getStarterGroups());
 
     // Wire up the discover_tools callback so it can mutate our active groups
@@ -1182,7 +1180,7 @@ export class Agent extends EventEmitter {
           // Touch the LRU cache so this tool stays active
           this._lruCache.touch(name);
 
-          let result = await registry.execute(name, args, { cwd: this.jailDirectory });
+          let result = await registry.execute(name, args, { cwd: this.jailDirectory, eventEmitter: this });
 
           // Track consecutive failures
           if (result?.error) {

@@ -12,7 +12,6 @@ npm start            # run the agent (equivalent to: node src/index.js)
 node src/index.js    # direct run
 node src/index.js -m <model> "prompt here"  # one-shot with specific model
 node src/index.js -d ./my-project "prompt"  # run in a specific directory
-node src/index.js --all-tools "prompt"      # expose all tools (for smaller models)
 npm test             # run unit tests (Jest)
 npm run test:e2e     # run end-to-end tests
 ```
@@ -28,7 +27,6 @@ No build step — plain ES modules (Node >= 20).
 | `-H, --host <url>` | Provider host/base URL (default: provider-specific) |
 | `--api-key <key>` | API key for cloud providers (or use env vars) |
 | `-d, --directory <path>` | Set working directory and jail boundary (default: cwd) |
-| `--all-tools` | Expose all tools (auto-detected for 30B+ models) |
 | `--auto-approve` | Skip approval prompts for write/command tools (alias: `--yolo`) |
 | `--approve-writes` | Auto-approve file write operations only |
 | `--approve-execute` | Auto-approve command execution only |
