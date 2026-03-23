@@ -500,7 +500,8 @@ function buildContextBar(modelName, tokenUsage, gitStats, width) {
 
 // ═══ Main entry point ═══
 
-export function startApp(agent, initialPrompt) {
+export function startApp(agent, initialPrompt, options = {}) {
+  const { showCodeExec = false } = options;
   const terminal = new ProcessTerminal();
   const tui = new TUI(terminal);
 
@@ -1400,6 +1401,39 @@ Reflect on these logs and determine if there's a skill worth creating. If the lo
     tui.requestRender();
   };
 
+  const onCodeExecStart = (event) => {
+    const { code } = event;
+    if (!showCodeExec) return;
+    // Show the code being executed
+    const lines = code.split('\n');
+    chatView.addLog(chalk.dim(`    ⎿  [code_exec] Executing JavaScript:`));
+    for (const line of lines) {
+      chatView.addLog(chalk.dim(`    ⎿  ${line}`));
+    }
+    tui.requestRender();
+  };
+
+  const onCodeExecToolCall = (event) => {
+    const { name, args } = event;
+    if (!showCodeExec) return;
+    const summary = summarizeArgs(args);
+    chatView.addLog(chalk.dim(`    ⎿  [code_exec] ${name}(${summary})`));
+    tui.requestRender();
+  };
+
+  const onCodeExecToolResult = (event) => {
+    const { name, result } = event;
+    if (!showCodeExec) return;
+    // Only show brief result info, not full output
+    const summary = result?.error
+      ? `error: ${result.error.slice(0, 50)}`
+      : result?._display
+        ? "(display)"
+        : `✓`;
+    chatView.addLog(chalk.dim(`    ⎿  [code_exec] ${name} → ${summary}`));
+    tui.requestRender();
+  };
+
   const onTokenUsage = (usage) => {
     tokenUsage = usage;
     updateContextBar();
@@ -1484,6 +1518,9 @@ Reflect on these logs and determine if there's a skill worth creating. If the lo
   agent.on("sub_agent_progress", onSubAgentProgress);
   agent.on("cross_agent_reply", onCrossAgentReply);
   agent.on("cross_agent_progress", onCrossAgentProgress);
+  agent.on("CodeExecStart", onCodeExecStart);
+  agent.on("CodeExecToolCall", onCodeExecToolCall);
+  agent.on("CodeExecToolResult", onCodeExecToolResult);
 
   // ── ask_user handler ──
   setAskHandler((question) =>
@@ -1588,6 +1625,9 @@ Reflect on these logs and determine if there's a skill worth creating. If the lo
     agent.off("sub_agent_progress", onSubAgentProgress);
     agent.off("cross_agent_reply", onCrossAgentReply);
     agent.off("cross_agent_progress", onCrossAgentProgress);
+    agent.off("CodeExecStart", onCodeExecStart);
+    agent.off("CodeExecToolCall", onCodeExecToolCall);
+    agent.off("CodeExecToolResult", onCodeExecToolResult);
     tui.stop();
   }
 
