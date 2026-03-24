@@ -341,8 +341,9 @@ smol-agent "add input validation to src/api.js"
 | `/inspect` | Dump current context to CONTEXT.md |
 | `/reload-skills` | Reload skills from global and local directories |
 | `/skills` | List available skills |
-| `/reflect` | Analyze recent logs for skill opportunities |
-| `exit` / `quit` | Exit the agent |
+| `/reflect` | Analyze recent logs for skill opportunities and update file documentation |
+| `/document` | Run full codebase documentation pass on all source files >100 lines |
+| `exit` / `quit` | Exit the agent (`/quit` also triggers end-of-session reflection) |
 | `Ctrl-C` | Cancel current operation (double-tap to exit) |
 
 ## Tools

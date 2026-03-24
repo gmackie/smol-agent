@@ -29,6 +29,7 @@ import { formatDiff, formatReplaceDiff, formatNewFileDiff } from "./diff.js";
 import { saveSetting } from "../settings.js";
 import { listModels } from "../ollama.js";
 import { logger, readRecentLogs } from "../logger.js";
+import { analyzeFilesForDocumentation, analyzeAllFilesForDocumentation, getEditedFiles } from "../tools/file_documentation.js";
 import { getSkillNames } from "../skills.js";
 import {
   listSessions,
@@ -556,6 +557,7 @@ export function startApp(agent, initialPrompt, options = {}) {
     { name: "skills", description: "List available skills" },
     { name: "agents", description: "List registered agents and their relationships" },
     { name: "agent", description: "Manage agents (info/link/unlink/snippet/role/remove)" },
+    { name: "document", description: "Run full codebase documentation pass on files >100 lines" },
     { name: "exit", description: "Exit the agent" },
   ];
   
@@ -634,6 +636,17 @@ export function startApp(agent, initialPrompt, options = {}) {
     const trimmed = text.trim();
 
     if (trimmed === "exit" || trimmed === "quit" || trimmed === "/exit" || trimmed === "/quit") {
+      // Run end-of-session reflection only on /quit
+      if (trimmed === "/quit") {
+        try {
+          chatView.addLog(chalk.dim("    ⎿  (running end-of-session reflection...)"));
+          tui.requestRender();
+          await agent.reflectOnSession();
+        } catch (err) {
+          // Don't block exit on reflection failure
+          logger.warn(`End-of-session reflection failed: ${err.message}`);
+        }
+      }
       cleanup();
       process.exit(0);
     }
@@ -1037,6 +1050,28 @@ export function startApp(agent, initialPrompt, options = {}) {
         return;
       }
 
+      // Analyze edited files for documentation needs
+      const editedFiles = getEditedFiles();
+      const reflectCwd = agent.jailDirectory || process.cwd();
+      let fileDocSection = "";
+      if (editedFiles.length > 0) {
+        const analysis = analyzeFilesForDocumentation(reflectCwd);
+        if (analysis.filesToDocument.length > 0) {
+          fileDocSection = `\n## File Documentation (IMPORTANT)\n\nThe following code files (>100 lines) were edited during this session and need documentation headers added or updated. For each file, add or update a block comment at the very top of the file that includes:\n1. A summary of what the file does\n2. Its dependencies (what it imports/uses)\n3. What depends on it (other files that reference/import it)\n4. Include the marker "@file-doc" so it can be detected and updated later\n\nFiles to document:\n`;
+          for (const file of analysis.filesToDocument) {
+            const status = file.hasExistingDoc ? "UPDATE existing doc" : "ADD new doc";
+            fileDocSection += `\n### \`${file.filePath}\` (${file.lineCount} lines) — ${status}\n`;
+            if (file.dependencies.length > 0) {
+              fileDocSection += `- Dependencies: ${file.dependencies.join(", ")}\n`;
+            }
+            if (file.dependents.length > 0) {
+              fileDocSection += `- Depended on by: ${file.dependents.join(", ")}\n`;
+            }
+          }
+          fileDocSection += `\n**Use read_file to review each file, then use replace_in_file to add/update the documentation block at the top.**\n`;
+        }
+      }
+
       const reflectPrompt = `Analyze the following agent session logs to identify patterns, repetitive tasks, or areas where the agent could benefit from a new skill. A skill is a reusable procedure that helps the agent work more effectively.
 
 ## What to look for:
@@ -1044,19 +1079,21 @@ export function startApp(agent, initialPrompt, options = {}) {
 2. **Common mistakes** - Errors that could be avoided with a checklist or procedure
 3. **Missing knowledge** - Domain-specific patterns the agent repeatedly discovers
 4. **Workflow improvements** - Multi-step processes that could be documented
+5. **Codebase understanding** - How the codebase works, architectural patterns, data flow
 
 ## Instructions:
 - If you find a good skill opportunity, write it as a markdown file to .smol-agent/skills/<name>.md
 - Use YAML frontmatter with: name, description, triggers (when to use)
 - The skill content should be practical guidance the agent can follow
 - After writing the skill, confirm it was created and explain why it will help
-
+- **IMPORTANT:** Also process any file documentation tasks listed below
+${fileDocSection}
 ## Agent Logs:
 \`\`\`
 ${logs}
 \`\`\`
 
-Reflect on these logs and determine if there's a skill worth creating. If the logs don't show clear patterns for improvement, explain what you observed.`;
+Reflect on these logs and determine if there's a skill worth creating. Process any file documentation updates listed above. If the logs don't show clear patterns for improvement, explain what you observed.`;
 
       chatView.addLog(chalk.dim("    ⎿  (reflecting on agent logs for skill opportunities...)"));
       chatView.addLog("");
@@ -1071,6 +1108,52 @@ Reflect on these logs and determine if there's a skill worth creating. If the lo
         chatView.addLog(chalk.dim("    ⎿  (skills context refreshed)"));
       } catch (err) {
         chatView.addLog(chalk.red(` ✗ Reflection failed: ${err.message}`));
+      } finally {
+        busy = false;
+        statusText = "";
+        tui.requestRender();
+      }
+      return;
+    }
+
+    if (trimmed === "/document" || trimmed.startsWith("/document ")) {
+      const docCwd = agent.jailDirectory || process.cwd();
+      chatView.addLog(chalk.dim("    ⎿  (scanning project for files needing documentation...)"));
+      tui.requestRender();
+
+      const analysis = analyzeAllFilesForDocumentation(docCwd);
+
+      if (analysis.filesToDocument.length === 0) {
+        chatView.addLog(chalk.dim("    ⎿  All source files ≤100 lines or already documented. Nothing to do."));
+        return;
+      }
+
+      chatView.addLog(chalk.dim(`    ⎿  Found ${analysis.filesToDocument.length} file(s) needing documentation.`));
+
+      let documentPrompt = `You are performing a full codebase documentation pass. For each file listed below (all >100 lines of code), you must:\n\n1. **Read the file** using read_file to understand what it does\n2. **Add or update** a documentation block at the very top of the file using replace_in_file\n\nThe documentation block should include:\n- A summary of what the file does\n- Its dependencies (what it imports/uses)\n- What depends on it (other files that import/reference it)\n- Include the marker "@file-doc" so it can be detected and updated later\n\nUse the appropriate comment style for the language (e.g., /** ... */ for JS/TS, """ ... """ for Python, etc.).\n\n## Files to document:\n`;
+
+      for (const file of analysis.filesToDocument) {
+        const status = file.hasExistingDoc ? "UPDATE existing doc" : "ADD new doc";
+        documentPrompt += `\n### \`${file.filePath}\` (${file.lineCount} lines) — ${status}\n`;
+        if (file.dependencies.length > 0) {
+          documentPrompt += `- Dependencies: ${file.dependencies.join(", ")}\n`;
+        }
+        if (file.dependents.length > 0) {
+          documentPrompt += `- Depended on by: ${file.dependents.join(", ")}\n`;
+        }
+      }
+
+      documentPrompt += `\nProcess each file one at a time. Read it, understand it, then add/update the documentation header.`;
+
+      busy = true;
+      statusText = "documenting...";
+      tui.requestRender();
+
+      try {
+        await agent.run(documentPrompt);
+        chatView.addLog(chalk.dim("    ⎿  (documentation pass complete)"));
+      } catch (err) {
+        chatView.addLog(chalk.red(` ✗ Documentation failed: ${err.message}`));
       } finally {
         busy = false;
         statusText = "";
@@ -1192,7 +1275,7 @@ Reflect on these logs and determine if there's a skill worth creating. If the lo
     // Handle skill commands: /<skill-name> loads and executes the skill
     if (trimmed.startsWith("/") && !trimmed.startsWith("/model") && !trimmed.startsWith("/clear") &&
         !trimmed.startsWith("/inspect") && !trimmed.startsWith("/reload-skills") && !trimmed.startsWith("/exit") &&
-        !trimmed.startsWith("/quit") && !trimmed.startsWith("/reflect") && !trimmed.startsWith("/skills") &&
+        !trimmed.startsWith("/quit") && !trimmed.startsWith("/reflect") && !trimmed.startsWith("/document") && !trimmed.startsWith("/skills") &&
         !trimmed.startsWith("/session") && !trimmed.startsWith("/sessions") &&
         !trimmed.startsWith("/architect") && !trimmed.startsWith("/undo") && !trimmed.startsWith("/checkpoints") &&
         !trimmed.startsWith("/approve") && !trimmed.startsWith("/agents") && !trimmed.startsWith("/agent")) {

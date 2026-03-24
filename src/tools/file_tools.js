@@ -3,6 +3,7 @@ import path from "node:path";
 import { register } from "./registry.js";
 import { resolveJailedPath } from "../path-utils.js";
 import { lintFileFormatted } from "../ts-lint.js";
+import { trackEditedFile } from "./file_documentation.js";
 
 const BINARY_PROBE_SIZE = 8192;
 
@@ -210,6 +211,7 @@ register("write_file", {
     const existed = fs.existsSync(resolved);
     const oldContent = existed ? fs.readFileSync(resolved, "utf-8") : "";
     fs.writeFileSync(resolved, content, "utf-8");
+    trackEditedFile(resolved);
 
     const lines = content.split("\n").length;
     const result = {
@@ -348,6 +350,7 @@ register("replace_in_file", {
     }
 
     fs.writeFileSync(resolved, updated, "utf-8");
+    trackEditedFile(resolved);
 
     const result = {
       filePath,

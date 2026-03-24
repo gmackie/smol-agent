@@ -54,6 +54,8 @@ import { setOllamaClient as setFetchClient } from "./tools/web_fetch.js";
 import "./tools/ask_user.js";
 import "./tools/plan_tools.js";
 import "./tools/reflection.js";
+import "./tools/file_documentation.js";
+import { getEditedFiles } from "./tools/file_documentation.js";
 import "./tools/memory.js";
 import { setSubAgentConfig } from "./tools/sub_agent.js";
 import { setCrossAgentConfig } from "./tools/cross_agent.js";
@@ -1131,6 +1133,18 @@ export class Agent extends EventEmitter {
             this.saveSession().catch(() => {});
           }
 
+          // ── Automatic reflection (5% chance per run) ──
+          // Probabilistically trigger reflection to keep file documentation
+          // up-to-date and build codebase understanding over time.
+          const editedFiles = getEditedFiles();
+          if (editedFiles.length > 0 && Math.random() < 0.05) {
+            logger.info("Auto-reflection triggered (5% chance, files were edited)");
+            this.emit("auto_reflect", { reason: "probabilistic" });
+            this._triggerAutoReflection().catch(err => {
+              logger.warn(`Auto-reflection failed: ${err.message}`);
+            });
+          }
+
           return content;
         }
 
@@ -1407,6 +1421,47 @@ export class Agent extends EventEmitter {
     const msg = "(Agent reached maximum iteration limit)";
     this.emit("response", { content: msg });
     return msg;
+  }
+
+  // ── Automatic reflection ────────────────────────────────────────────
+
+  /**
+   * Trigger an automatic reflection pass. Calls the reflect tool internally
+   * to analyze edited files and update documentation headers.
+   * This runs as a fire-and-forget operation after a successful run.
+   */
+  async _triggerAutoReflection() {
+    const reflectPrompt = `You just completed a task. Use the reflect tool to summarize what you did, then review and update documentation headers for any code files >100 lines that were modified. Include a codebaseInsights field with your observations about how the code you touched fits into the broader architecture.`;
+
+    try {
+      await this.run(reflectPrompt);
+    } catch (err) {
+      logger.warn(`Auto-reflection run failed: ${err.message}`);
+    }
+  }
+
+  /**
+   * Run a full end-of-session reflection. Should be called when the user
+   * exits or ends a session. Reflects on all work done during the session
+   * and ensures file documentation is up-to-date.
+   */
+  async reflectOnSession() {
+    const editedFiles = getEditedFiles();
+    if (editedFiles.length === 0) {
+      logger.info("End-of-session reflection skipped — no files were edited");
+      return;
+    }
+
+    logger.info(`End-of-session reflection — ${editedFiles.length} file(s) edited`);
+    this.emit("auto_reflect", { reason: "end_of_session" });
+
+    const reflectPrompt = `This session is ending. Use the reflect tool to provide a comprehensive summary of all work done this session. Make sure to include codebaseInsights about patterns and architecture you discovered. The reflect tool will automatically analyze edited files for documentation needs — act on its recommendations by reading each file and adding/updating documentation headers.`;
+
+    try {
+      await this.run(reflectPrompt);
+    } catch (err) {
+      logger.warn(`End-of-session reflection failed: ${err.message}`);
+    }
   }
 
   // ── Session management ──────────────────────────────────────────────

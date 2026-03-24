@@ -112,7 +112,8 @@ All tools self-register by calling `register(name, { description, parameters, ex
 | `web_fetch.js` | `web_fetch` | Fetches a URL via `ollama.webFetch()`. Truncates to 12k chars. Needs client injected via `setOllamaClient()`. |
 | `ask_user.js` | `ask_user` | Asks user a question. Works via a promise bridge: UI sets a handler with `setAskHandler()`, tool awaits it. |
 | `plan_tools.js` | `save_plan`, `load_plan_progress`, `get_current_plan`, `complete_plan_step`, `update_plan_status` | Plan management for saving and tracking progress on implementation plans. |
-| `reflection.js` | `reflect` | Summarize work done, identify what went well, areas for improvement. |
+| `reflection.js` | `reflect` | Summarize work done, identify what went well, areas for improvement. Also analyzes edited files >100 lines for documentation needs. |
+| `file_documentation.js` | — | Tracks edited files, extracts dependencies/dependents, analyzes files for documentation headers. Used by reflect tool and /reflect command. |
 | `memory.js` | `remember`, `recall`, `memory_bank_read`, `memory_bank_write`, `memory_bank_init` | Persistent key-value memory and structured Memory Bank. |
 | `git.js` | `git` | Safe git operations. Blocks `push`, `--force`, destructive resets. Auto-generates commit messages from change summaries. |
 | `sub_agent.js` | `delegate` | Spawn a sub-agent with read-only tools for focused research tasks. Returns condensed results. |
@@ -127,6 +128,17 @@ This project uses **ES modules** (`"type": "module"` in package.json). **Never u
 ## Reflection
 
 The agent has a `reflect` tool that can summarize work done, identify what went well, and note areas for improvement. The model can call this tool when it wants to reflect on its work.
+
+### File Documentation
+
+As part of the reflection process, the agent analyzes all code files that were edited during the session. Files longer than 100 lines are flagged for documentation. The documentation header (placed at the top of each file) should include:
+
+1. **Summary** — What the file does
+2. **Dependencies** — What it imports/requires
+3. **Depended on by** — Other files that import/reference it
+4. **`@file-doc` marker** — So the header can be detected and updated later
+
+The `/reflect` command in the UI and the `reflect` tool both trigger this analysis. The `file_documentation.js` module tracks which files were edited via `trackEditedFile()` (called automatically by `write_file` and `replace_in_file`), and `analyzeFilesForDocumentation()` produces a report of files needing documentation.
 
 ## Skills
 
