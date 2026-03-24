@@ -16,8 +16,7 @@
 
 import { BaseLLMProvider, MAX_RETRIES } from "./base.js";
 import { formatAPIError } from "./errors.js";
-
-const DEFAULT_MAX_TOKENS = 128000;
+import { DEFAULT_MAX_TOKENS } from "../constants.js";
 
 export class OpenAICompatibleProvider extends BaseLLMProvider {
   /**

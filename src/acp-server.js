@@ -1,3 +1,16 @@
+/**
+ * Agent Client Protocol (ACP) server for smol-agent.
+ * 
+ * Implements the ACP specification for IDE/editor integration.
+ * Exposes the agent via JSON-RPC over stdio, allowing external
+ * clients to:
+ * - Start and manage agent sessions
+ * - Send messages and receive responses
+ * - Handle tool approval requests
+ * - Stream events in real-time
+ * 
+ * @module acp-server
+ */
 import * as acp from "@agentclientprotocol/sdk";
 import { Readable, Writable } from "node:stream";
 import crypto from "node:crypto";

@@ -1,3 +1,19 @@
+/**
+ * Core agent loop for smol-agent.
+ * 
+ * This module implements the main Agent class that drives the conversation
+ * with the LLM provider. It handles:
+ * - Tool call execution and result feeding
+ * - Context management and summarization
+ * - Error handling and retries
+ * - Session persistence
+ * - Cross-agent communication
+ * 
+ * The agent runs in a loop: send messages → receive response → execute tools → repeat
+ * until the model produces a text response (no tool calls).
+ * 
+ * @module agent
+ */
 import { EventEmitter } from "node:events";
 import { createProvider } from "./providers/index.js";
 import * as registry from "./tools/registry.js";
@@ -19,6 +35,14 @@ import { architectPass, formatPlanForEditor } from "./architect.js";
 import { createCheckpoint, rollbackToCheckpoint, listCheckpoints, cleanupCheckpoints } from "./checkpoint.js";
 import { detectRepoMetadata, detectSnippet, registerAgent } from "./agent-registry.js";
 import { watchForResponses, clearStaleInbox } from "./cross-agent.js";
+import {
+  MAX_ITERATIONS,
+  DEFAULT_MAX_TOKENS,
+  MAX_TOOL_FAILURES,
+  MAX_STREAM_RETRIES,
+  STREAM_RETRY_DELAY_MS,
+  TOOL_HISTORY_SIZE
+} from "./constants.js";
 
 // Import all tools so they self-register
 import "./tools/run_command.js";
@@ -36,7 +60,6 @@ import { setCrossAgentConfig } from "./tools/cross_agent.js";
 import "./tools/context_docs.js";
 import "./tools/git.js";
 import "./tools/session_tools.js";
-import "./tools/cross_agent.js";
 import "./tools/code_execution.js";
 import { setActivateGroupCallback } from "./tools/discover_tools.js";
 import { LRUToolCache } from "./lru-tool-cache.js";
@@ -270,7 +293,7 @@ export class Agent extends EventEmitter {
     this.llmProvider = llmProvider || createProvider({ provider, model, host, apiKey, programmaticToolCalling });
     this.model = this.llmProvider.model;
     this.contextSize = contextSize; // AGENT.md line limit only
-    this.maxTokens = maxTokens || 128000;
+    this.maxTokens = maxTokens || DEFAULT_MAX_TOKENS;
     this.jailDirectory = jailDirectory || process.cwd();
     setLogBaseDir(this.jailDirectory);
     this.messages = [];
@@ -733,7 +756,7 @@ export class Agent extends EventEmitter {
 
     // Check and summarize/prune conversation if approaching limit
     const status = this.contextManager.getStatus(this.messages);
-    
+
     // Try summarization first if at 55% capacity
     if (status.shouldSummarize && this.messages.length > 8) {
       logger.info(`Context at ${status.usage.percentage}% - summarizing old messages`);
@@ -747,7 +770,7 @@ export class Agent extends EventEmitter {
         logger.warn(`Summarization failed: ${error.message}`);
       }
     }
-    
+
     // Then prune if still needed (at 70% capacity)
     const updatedStatus = this.contextManager.getStatus(this.messages);
     if (updatedStatus.shouldPrune) {
@@ -871,7 +894,6 @@ export class Agent extends EventEmitter {
     let consecutiveAgentRetries = 0;
     let overflowRetries = 0;
     const MAX_AGENT_RETRIES = 2;
-    const MAX_STREAM_RETRIES = 2;
     const MAX_OVERFLOW_RETRIES = 1;
 
     // Retry callback — emits events for UI feedback
@@ -881,7 +903,7 @@ export class Agent extends EventEmitter {
       this.emit("retry", { attempt, maxRetries, message: msg, delayMs });
     };
 
-    while (iterations++ < 200) {
+    while (iterations++ < MAX_ITERATIONS) {
       try {
         // ── Refresh tools if groups changed (progressive discovery) ──
         if (this._progressiveDiscovery) {
@@ -1007,7 +1029,7 @@ export class Agent extends EventEmitter {
               logger.warn(`Mid-stream error, retrying (attempt ${streamAttempt + 1}/${MAX_STREAM_RETRIES}): ${msg}`);
               this.abortController = new AbortController();
               this.emit("retry", { attempt: streamAttempt + 1, maxRetries: MAX_STREAM_RETRIES, message: msg, delayMs: 1000 });
-              await new Promise(r => setTimeout(r, 1000));
+              await new Promise(r => setTimeout(r, STREAM_RETRY_DELAY_MS));
               continue;
             }
 
@@ -1132,7 +1154,7 @@ export class Agent extends EventEmitter {
           this._recentToolCalls.push(sig);
         }
         if (this._recentToolCalls.length > 12) {
-          this._recentToolCalls = this._recentToolCalls.slice(-12);
+          this._recentToolCalls = this._recentToolCalls.slice(-TOOL_HISTORY_SIZE);
         }
 
         const loopSeverity = detectToolLoop(this._recentToolCalls, this._loopNudges);
@@ -1171,7 +1193,7 @@ export class Agent extends EventEmitter {
 
           // Circuit breaker — skip tools that failed 3+ times consecutively
           const failures = this._toolFailures.get(name) || 0;
-          if (failures >= 3) {
+          if (failures >= MAX_TOOL_FAILURES) {
             const msg = `Tool "${name}" has failed ${failures} times consecutively. Try a different approach.`;
             this.emit("tool_result", { name, result: { error: msg } });
             return { error: msg };
@@ -1527,7 +1549,7 @@ export class Agent extends EventEmitter {
 
   /** Get the current project context as a string. */
   async getContext() {
-    return await gatherContext(this.jailDirectory, this.contextSize);
+    return gatherContext(this.jailDirectory, this.contextSize);
   }
 
   /**

@@ -543,7 +543,7 @@ export function sendReply({
       replyPath = path.join(senderInbox, `${originalLetter.id}.response.md`);
       atomicWriteFileSync(replyPath, markdown);
       logger.info(`Reply delivered to ${originalLetter.from}`);
-    } catch (_err) {
+    } catch {
       logger.warn(`Skipping reply delivery to unregistered sender: ${originalLetter.from}`);
     }
   }
@@ -669,7 +669,9 @@ export function waitForReply({ repoPath, letterId, timeoutMs = DEFAULT_REPLY_TIM
     const inboxDir = ensureInbox(path.resolve(repoPath));
     const targetFile = `${letterId}.response.md`;
 
+    // eslint-disable-next-line prefer-const
     let watcher;
+    // eslint-disable-next-line prefer-const
     let timer;
     let pollInterval;
     let settled = false;

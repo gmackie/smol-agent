@@ -16,7 +16,7 @@
 import { register } from "./registry.js";
 
 // ── Cross-agent progress config (set by Agent) ───────────────────────
-let crossAgentConfig = { onProgress: null };
+const crossAgentConfig = { onProgress: null };
 
 export function setCrossAgentConfig(cfg) {
   if (cfg.onProgress !== undefined) crossAgentConfig.onProgress = cfg.onProgress;

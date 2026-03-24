@@ -51,7 +51,7 @@ export function parseToolCallsFromContent(content, { markAsTextParsed = true } =
 
   for (const candidate of candidates) {
     try {
-      let parsed = JSON.parse(candidate);
+      const parsed = JSON.parse(candidate);
       // Handle arrays of tool calls
       if (Array.isArray(parsed)) {
         for (const item of parsed) {

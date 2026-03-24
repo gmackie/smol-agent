@@ -1,3 +1,16 @@
+/**
+ * Agent Skills system for smol-agent.
+ * 
+ * Skills are markdown files that define reusable capabilities for the agent.
+ * They are loaded from:
+ * - Project-local: .smol-agent/skills/
+ * - Global: ~/.config/smol-agent/skills/
+ * 
+ * Each skill file should have a name and description in its frontmatter,
+ * and can define instructions, examples, and constraints for the agent.
+ * 
+ * @module skills
+ */
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";

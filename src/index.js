@@ -1,4 +1,12 @@
 #!/usr/bin/env node
+/**
+ * CLI entry point for smol-agent.
+ * 
+ * Parses command-line arguments, initializes the LLM provider,
+ * creates the Agent instance, and renders the terminal UI.
+ * 
+ * @module index
+ */
 
 import { Agent } from "./agent.js";
 import { startApp } from "./ui/App.js";

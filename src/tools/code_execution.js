@@ -158,19 +158,19 @@ register("code_execution", {
         toolCallLog.push({ name, args, timestamp: Date.now() });
         // Emit event for UI visibility
         if (eventEmitter) {
-          eventEmitter.emit("CodeExecToolCall", { name, args });
+          eventEmitter.emit("code_exec_tool_call", { name, args });
         }
       },
       onToolResult: (name, args, result) => {
         if (eventEmitter) {
-          eventEmitter.emit("CodeExecToolResult", { name, args, result });
+          eventEmitter.emit("code_exec_tool_result", { name, args, result });
         }
       },
     });
 
     // Emit event for UI visibility when code execution starts
     if (eventEmitter) {
-      eventEmitter.emit("CodeExecStart", { code });
+      eventEmitter.emit("code_exec_start", { code });
     }
 
     try {

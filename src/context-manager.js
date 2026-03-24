@@ -18,9 +18,9 @@ import { logger } from './logger.js';
 import { isContextOverflowError as _isOverflow } from './errors.js';
 import { summarizeMessagesWithLLM, selectMessagesToSummarize } from './context-summarizer.js';
 import { estimateMessageTokens, estimateTokens, estimateTotalTokens as estimateTokensTotal } from './token-estimator.js';
+import { DEFAULT_MAX_TOKENS } from './constants.js';
 
 // Configuration
-const DEFAULT_MAX_TOKENS = 128000;
 const PRUNE_THRESHOLD = 0.70;      // Start pruning at 70% capacity
 const CRITICAL_THRESHOLD = 0.85;   // Aggressive pruning at 85%
 const MIN_KEEP_MESSAGES = 6;      // Always keep last N user/assistant pairs
@@ -615,7 +615,7 @@ export class ContextManager {
   updateFromAPI(promptTokens, completionTokens, messageCount) {
     if (promptTokens) this.lastPromptTokens = promptTokens;
     if (completionTokens) this.lastCompletionTokens = completionTokens;
-    if (messageCount != null) this._messageCountAtLastUpdate = messageCount;
+    if (messageCount !== null) this._messageCountAtLastUpdate = messageCount;
   }
 
   /**

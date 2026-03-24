@@ -8,9 +8,9 @@
 
 import { Ollama } from "ollama";
 import { BaseLLMProvider, MAX_RETRIES } from "./base.js";
+import { DEFAULT_MAX_TOKENS } from "../constants.js";
 
 const DEFAULT_MODEL = process.env.SMOL_AGENT_MODEL || "qwen2.5-coder:32b";
-const DEFAULT_MAX_TOKENS = 128000;
 const MIN_CONTEXT = 16384;
 
 export class OllamaProvider extends BaseLLMProvider {
@@ -95,7 +95,7 @@ export class OllamaProvider extends BaseLLMProvider {
       onRetry,
     );
 
-    let accumulatedToolCalls = [];
+    const accumulatedToolCalls = [];
 
     for await (const chunk of stream) {
       if (chunk.message?.content) {

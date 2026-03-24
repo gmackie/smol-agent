@@ -17,6 +17,7 @@ import * as ollama from "./ollama.js";
 import * as registry from "./tools/registry.js";
 import { parseToolCallsFromContent } from "./tool-call-parser.js";
 import { logger } from "./logger.js";
+import { DEFAULT_MAX_TOKENS } from "./constants.js";
 
 const READ_ONLY_TOOLS = new Set(["read_file", "list_files", "grep"]);
 
@@ -58,7 +59,7 @@ const MAX_ARCHITECT_ITERATIONS = 20;
 export async function architectPass(client, model, task, options = {}) {
   const {
     cwd = process.cwd(),
-    maxTokens = 128000,
+    maxTokens = DEFAULT_MAX_TOKENS,
     projectContext = "",
     signal = null,
     onProgress = null,

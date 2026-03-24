@@ -1,3 +1,16 @@
+/**
+ * Session persistence for smol-agent.
+ * 
+ * Manages saving and loading of conversation sessions to disk.
+ * Sessions are stored as JSON files in .smol-agent/state/sessions/
+ * 
+ * Each session contains:
+ * - Conversation messages
+ * - Metadata (created time, model, provider)
+ * - Session name for easy recall
+ * 
+ * @module sessions
+ */
 import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";

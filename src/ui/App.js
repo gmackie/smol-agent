@@ -580,7 +580,7 @@ export function startApp(agent, initialPrompt, options = {}) {
   // ── ChatView ──
   const chatView = new ChatView(tui, editor, statusArea, footerBar);
 
-  let gitStatsCache = { result: null, timestamp: 0 };
+  const gitStatsCache = { result: null, timestamp: 0 };
   const GIT_STATS_TTL = 10_000; // 10 seconds
 
   function updateContextBar() {
@@ -1518,9 +1518,9 @@ Reflect on these logs and determine if there's a skill worth creating. If the lo
   agent.on("sub_agent_progress", onSubAgentProgress);
   agent.on("cross_agent_reply", onCrossAgentReply);
   agent.on("cross_agent_progress", onCrossAgentProgress);
-  agent.on("CodeExecStart", onCodeExecStart);
-  agent.on("CodeExecToolCall", onCodeExecToolCall);
-  agent.on("CodeExecToolResult", onCodeExecToolResult);
+  agent.on("code_exec_start", onCodeExecStart);
+  agent.on("code_exec_tool_call", onCodeExecToolCall);
+  agent.on("code_exec_tool_result", onCodeExecToolResult);
 
   // ── ask_user handler ──
   setAskHandler((question) =>
@@ -1625,9 +1625,9 @@ Reflect on these logs and determine if there's a skill worth creating. If the lo
     agent.off("sub_agent_progress", onSubAgentProgress);
     agent.off("cross_agent_reply", onCrossAgentReply);
     agent.off("cross_agent_progress", onCrossAgentProgress);
-    agent.off("CodeExecStart", onCodeExecStart);
-    agent.off("CodeExecToolCall", onCodeExecToolCall);
-    agent.off("CodeExecToolResult", onCodeExecToolResult);
+    agent.off("code_exec_start", onCodeExecStart);
+    agent.off("code_exec_tool_call", onCodeExecToolCall);
+    agent.off("code_exec_tool_result", onCodeExecToolResult);
     tui.stop();
   }
 
