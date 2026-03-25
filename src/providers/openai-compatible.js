@@ -49,8 +49,8 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
 
     this.apiKey = apiKey;
     this.defaultHeaders = {
-      ...(runtimeContext ? buildRuntimeHeaders(runtimeContext) : {}),
       ...(defaultHeaders || {}),
+      ...(runtimeContext ? buildRuntimeHeaders(runtimeContext) : {}),
     };
     this.baseURL = (baseURL || "https://api.openai.com/v1").replace(/\/+$/, "");
 
