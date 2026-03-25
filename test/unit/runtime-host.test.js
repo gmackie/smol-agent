@@ -25,4 +25,16 @@ describe("validateAgentHost", () => {
 
     expect(() => validateAgentHost(host)).toThrow(/messageTransport/i);
   });
+
+  it("rejects a host with malformed interface shapes", () => {
+    const host = {
+      sessionStore: { create: async () => {}, load: async () => {}, save: async () => {} },
+      memoryStore: { read: async () => "", write: async () => {} },
+      messageTransport: {},
+      toolProvider: { getTools: "not-a-function", execute: async () => ({ ok: true }) },
+      eventSink: { emit: () => {} },
+    };
+
+    expect(() => validateAgentHost(host)).toThrow(/messageTransport|toolProvider/i);
+  });
 });
