@@ -114,6 +114,26 @@ describe("createProvider()", () => {
     const p = createProvider({ provider: "openai", model: "gpt-4-turbo", apiKey: "k" });
     expect(p.model).toBe("gpt-4-turbo");
   });
+
+  test("forwards runtime context and default headers through createProvider()", () => {
+    const p = createProvider({
+      provider: "openai",
+      apiKey: "test-key",
+      runtimeContext: {
+        tieredRouter: {
+          workflowId: 88,
+          protectionLevel: "controlled",
+        },
+      },
+      defaultHeaders: {
+        "X-Custom-Header": "custom",
+      },
+    });
+
+    expect(p.defaultHeaders["X-Workflow-Id"]).toBe("88");
+    expect(p.defaultHeaders["X-Protection-Level"]).toBe("controlled");
+    expect(p.defaultHeaders["X-Custom-Header"]).toBe("custom");
+  });
 });
 
 // ── listProviders / getDefaultModel ──────────────────────────────────────────

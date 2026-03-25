@@ -105,7 +105,15 @@ const PROVIDER_PRESETS = {
  * @param {boolean} [options.programmaticToolCalling] - Enable programmatic tool calling
  * @returns {import('./base.js').BaseLLMProvider}
  */
-export function createProvider({ provider, model, host, apiKey, programmaticToolCalling } = {}) {
+export function createProvider({
+  provider,
+  model,
+  host,
+  apiKey,
+  programmaticToolCalling,
+  runtimeContext,
+  defaultHeaders,
+} = {}) {
   const rawProvider = provider || process.env.SMOL_AGENT_PROVIDER || "ollama";
   const providerName = rawProvider.toLowerCase();
 
@@ -119,6 +127,8 @@ export function createProvider({ provider, model, host, apiKey, programmaticTool
       baseURL: host, // host doubles as baseURL for non-Ollama providers
       apiKey: key,
       programmaticToolCalling,
+      runtimeContext,
+      defaultHeaders,
     });
   }
 
@@ -130,6 +140,8 @@ export function createProvider({ provider, model, host, apiKey, programmaticTool
       model: model || "default",
       apiKey: apiKey || process.env.OPENAI_API_KEY,
       providerName: "custom",
+      runtimeContext,
+      defaultHeaders,
     });
   }
 
