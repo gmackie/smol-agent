@@ -77,4 +77,104 @@ describe("multi-agent runtime", () => {
     });
     expect(result).toEqual({ result: "delegated result" });
   });
+
+  it("routes reply_to_letter and read_outbox through the configured cross-agent runtime", async () => {
+    const { setCrossAgentRuntime } = await import("../../src/tools/cross_agent.js");
+
+    const replyDefinition = registerCalls.find(({ name }) => name === "reply_to_letter")?.definition;
+    const outboxDefinition = registerCalls.find(({ name }) => name === "read_outbox")?.definition;
+    expect(replyDefinition).toBeDefined();
+    expect(outboxDefinition).toBeDefined();
+
+    const receiveMessage = jest.fn(async ({ mailbox, letterId }) => {
+      if (mailbox === "request" && letterId === "letter-9") {
+        return {
+          id: "letter-9",
+          from: "/tmp/requester",
+          title: "Need help",
+          verificationSteps: [],
+        };
+      }
+      if (mailbox === "outbox") {
+        return [
+          {
+            id: "letter-9",
+            title: "Need help",
+            to: "/tmp/worker",
+            priority: "medium",
+            createdAt: "2026-03-25T10:00:00.000Z",
+          },
+        ];
+      }
+      if (mailbox === "reply" && letterId === "letter-9") {
+        return {
+          status: "completed",
+          title: "Need help",
+        };
+      }
+      return null;
+    });
+    const replyMessage = jest.fn(async (payload) => ({
+      id: "response-9",
+      responsePath: `${payload.repoPath}/.smol-agent/inbox/letter-9.response.md`,
+    }));
+    setCrossAgentRuntime({
+      receiveMessage,
+      replyMessage,
+      sendMessage: jest.fn(),
+      awaitResult: jest.fn(),
+    });
+
+    const replyResult = await replyDefinition.execute({
+      letter_id: "letter-9",
+      changes_made: "Updated workflow logic",
+    }, {
+      cwd: "/tmp/worker",
+    });
+
+    expect(receiveMessage).toHaveBeenCalledWith({
+      repoPath: "/tmp/worker",
+      mailbox: "request",
+      letterId: "letter-9",
+    });
+    expect(replyMessage).toHaveBeenCalledWith(expect.objectContaining({
+      repoPath: "/tmp/worker",
+      letterId: "letter-9",
+      originalLetter: expect.objectContaining({ id: "letter-9" }),
+      changesMade: "Updated workflow logic",
+    }));
+    expect(replyResult).toEqual({
+      success: true,
+      response_id: "response-9",
+      message: "Reply sent for letter letter-9. Response delivered to /tmp/requester.",
+    });
+
+    const outboxResult = await outboxDefinition.execute({}, {
+      cwd: "/tmp/worker",
+    });
+
+    expect(receiveMessage).toHaveBeenCalledWith({
+      repoPath: "/tmp/worker",
+      mailbox: "outbox",
+    });
+    expect(receiveMessage).toHaveBeenCalledWith({
+      repoPath: "/tmp/worker",
+      mailbox: "reply",
+      letterId: "letter-9",
+    });
+    expect(outboxResult).toEqual({
+      count: 1,
+      letters: [
+        {
+          id: "letter-9",
+          title: "Need help",
+          to: "/tmp/worker",
+          priority: "medium",
+          created_at: "2026-03-25T10:00:00.000Z",
+          reply_received: true,
+          reply_status: "completed",
+        },
+      ],
+    });
+  });
 });

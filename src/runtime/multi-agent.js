@@ -8,6 +8,7 @@ export function createMultiAgentRuntime({
   spawnChild,
   sendMessageImpl,
   receiveMessageImpl,
+  replyMessageImpl,
   listThreadsImpl,
   awaitResultImpl,
   terminateAgentImpl,
@@ -21,6 +22,9 @@ export function createMultiAgentRuntime({
     },
     receiveMessage(payload) {
       return (receiveMessageImpl || missing("receiveMessageImpl"))(payload);
+    },
+    replyMessage(payload) {
+      return (replyMessageImpl || missing("replyMessageImpl"))(payload);
     },
     listThreads(payload) {
       return (listThreadsImpl || (async () => []))(payload);

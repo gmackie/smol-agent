@@ -38,7 +38,6 @@ import {
   readInbox,
   readOutbox,
   sendReply,
-  parseLetter,
   waitForReply,
   DEFAULT_REPLY_TIMEOUT_MS,
 } from "../cross-agent.js";
@@ -51,14 +50,18 @@ import {
   findAgentForTask,
 } from "../agent-registry.js";
 import { logger } from "../logger.js";
-import fs from "node:fs";
 import path from "node:path";
 
 function getCrossAgentRuntime() {
   if (!crossAgentRuntime) {
     crossAgentRuntime = createMultiAgentRuntime({
       sendMessageImpl: async (payload) => sendLetter(payload),
+      replyMessageImpl: async (payload) => sendReply(payload),
       receiveMessageImpl: async ({ repoPath, filter = {}, mailbox = "inbox", letterId }) => {
+        if (mailbox === "request" && letterId) {
+          const letters = readInbox(repoPath, {});
+          return letters.find((letter) => letter.id === letterId) || null;
+        }
         if (mailbox === "reply" && letterId) {
           return checkForReply(repoPath, letterId);
         }
@@ -384,8 +387,12 @@ register("read_outbox", {
       }
 
       // For each outgoing letter, check if a reply exists
-      const withStatus = letters.map((l) => {
-        const reply = checkForReply(cwd, l.id);
+      const withStatus = await Promise.all(letters.map(async (l) => {
+        const reply = await getCrossAgentRuntime().receiveMessage({
+          repoPath: cwd,
+          mailbox: "reply",
+          letterId: l.id,
+        });
         return {
           id: l.id,
           title: l.title,
@@ -395,7 +402,7 @@ register("read_outbox", {
           reply_received: !!reply,
           reply_status: reply?.status || null,
         };
-      });
+      }));
 
       return { count: withStatus.length, letters: withStatus };
     } catch (err) {
@@ -449,18 +456,14 @@ register("reply_to_letter", {
   },
   async execute(args, { cwd }) {
     try {
-      // Find the original letter
-      const letterPath = path.join(
-        cwd,
-        ".smol-agent/inbox",
-        `${args.letter_id}.letter.md`,
-      );
-      if (!fs.existsSync(letterPath)) {
+      const originalLetter = await getCrossAgentRuntime().receiveMessage({
+        repoPath: cwd,
+        mailbox: "request",
+        letterId: args.letter_id,
+      });
+      if (!originalLetter) {
         return { error: `Letter not found: ${args.letter_id}` };
       }
-      const originalLetter = parseLetter(
-        fs.readFileSync(letterPath, "utf-8"),
-      );
 
       // Enforce verification: if original letter had verification steps,
       // the reply must include verification results
@@ -476,8 +479,9 @@ register("reply_to_letter", {
         };
       }
 
-      const result = sendReply({
+      const result = await getCrossAgentRuntime().replyMessage({
         repoPath: cwd,
+        letterId: args.letter_id,
         originalLetter,
         changesMade: args.changes_made,
         verificationResults: args.verification_results || "",
