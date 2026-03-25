@@ -31,7 +31,6 @@
  *
  * @module agent
  */
-import { EventEmitter } from "node:events";
 import { createProvider } from "./providers/index.js";
 import * as registry from "./tools/registry.js";
 import { gatherContext, loadScopedRules } from "./context.js";
@@ -81,6 +80,8 @@ import "./tools/session_tools.js";
 import "./tools/code_execution.js";
 import { setActivateGroupCallback } from "./tools/discover_tools.js";
 import { LRUToolCache } from "./lru-tool-cache.js";
+import { AgentRuntime } from "./runtime/agent-runtime.js";
+import { createLocalHost } from "./runtime/local-host.js";
 
 // ── Thinking tags parser ─────────────────────────────────────────────
 
@@ -290,7 +291,7 @@ export function detectToolLoop(recentSignatures, loopNudges) {
 
 // ── Agent ────────────────────────────────────────────────────────────
 
-export class Agent extends EventEmitter {
+export class Agent extends AgentRuntime {
   /**
    * @param {object} options
    * @param {string}  [options.host]          - Ollama host or API base URL
@@ -304,15 +305,16 @@ export class Agent extends EventEmitter {
    * @param {boolean} [options.coreToolsOnly] - Restrict to core tools
    * @param {boolean} [options.programmaticToolCalling] - Enable programmatic tool calling
    */
-  constructor({ host, model, provider, apiKey, llmProvider, contextSize, maxTokens, jailDirectory, coreToolsOnly, programmaticToolCalling } = {}) {
-    super();
+  constructor({ host, model, provider, apiKey, llmProvider, contextSize, maxTokens, jailDirectory, coreToolsOnly, programmaticToolCalling, agentHost } = {}) {
+    const resolvedJailDirectory = jailDirectory || process.cwd();
+    super({ host: agentHost || createLocalHost({ jailDirectory: resolvedJailDirectory }) });
 
     // Create or use the provided LLM provider
     this.llmProvider = llmProvider || createProvider({ provider, model, host, apiKey, programmaticToolCalling });
     this.model = this.llmProvider.model;
     this.contextSize = contextSize; // AGENT.md line limit only
     this.maxTokens = maxTokens || DEFAULT_MAX_TOKENS;
-    this.jailDirectory = jailDirectory || process.cwd();
+    this.jailDirectory = resolvedJailDirectory;
     setLogBaseDir(this.jailDirectory);
     this.messages = [];
     this.running = false;

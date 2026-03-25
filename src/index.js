@@ -41,6 +41,7 @@ import { loadSettings } from "./settings.js";
 import { listSessions, findSession } from "./sessions.js";
 import { cleanup as cleanupTiktoken } from "./token-estimator.js";
 import { execSync } from "node:child_process";
+import { createLocalHost } from "./runtime/local-host.js";
 
 // XDG-compliant global config directory
 const XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
@@ -362,7 +363,16 @@ if (acpMode) {
   // This is used by processLetter() to spawn child agents that can
   // reliably execute tools without the overhead/fragility of a TUI on
   // a non-TTY stdin.
-  const agent = new Agent({ host, model, provider, apiKey, jailDirectory, coreToolsOnly, programmaticToolCalling: programmaticTools });
+  const agent = new Agent({
+    host,
+    model,
+    provider,
+    apiKey,
+    jailDirectory,
+    coreToolsOnly,
+    programmaticToolCalling: programmaticTools,
+    agentHost: createLocalHost({ jailDirectory }),
+  });
 
   if (autoApprove) agent._approveAll = true;
   if (autoApproveWrites) agent.approveCategory("write");
@@ -403,7 +413,16 @@ if (acpMode) {
   }
 } else {
   // ── TUI mode ────────────────────────────────────────────────────────
-  const agent = new Agent({ host, model, provider, apiKey, jailDirectory, coreToolsOnly, programmaticToolCalling: programmaticTools });
+  const agent = new Agent({
+    host,
+    model,
+    provider,
+    apiKey,
+    jailDirectory,
+    coreToolsOnly,
+    programmaticToolCalling: programmaticTools,
+    agentHost: createLocalHost({ jailDirectory }),
+  });
 
   // Load persisted settings, CLI flags override
   const settings = await loadSettings(jailDirectory);
