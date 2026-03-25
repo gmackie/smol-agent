@@ -23,9 +23,11 @@
  */
 
 import { register } from "./registry.js";
+import { createMultiAgentRuntime } from "../runtime/multi-agent.js";
 
 // ── Cross-agent progress config (set by Agent) ───────────────────────
 const crossAgentConfig = { onProgress: null };
+let crossAgentRuntime = null;
 
 export function setCrossAgentConfig(cfg) {
   if (cfg.onProgress !== undefined) crossAgentConfig.onProgress = cfg.onProgress;
@@ -51,6 +53,33 @@ import {
 import { logger } from "../logger.js";
 import fs from "node:fs";
 import path from "node:path";
+
+function getCrossAgentRuntime() {
+  if (!crossAgentRuntime) {
+    crossAgentRuntime = createMultiAgentRuntime({
+      sendMessageImpl: async (payload) => sendLetter(payload),
+      receiveMessageImpl: async ({ repoPath, filter = {}, mailbox = "inbox", letterId }) => {
+        if (mailbox === "reply" && letterId) {
+          return checkForReply(repoPath, letterId);
+        }
+        if (mailbox === "outbox") {
+          return readOutbox(repoPath);
+        }
+        return readInbox(repoPath, filter);
+      },
+      listThreadsImpl: async ({ repoPath }) => readInbox(repoPath, {}),
+      awaitResultImpl: async ({ repoPath, letterId, timeoutMs }) => (
+        waitForReply({ repoPath, letterId, timeoutMs })
+      ),
+      terminateAgentImpl: async () => ({ terminated: false }),
+    });
+  }
+  return crossAgentRuntime;
+}
+
+export function setCrossAgentRuntime(runtime) {
+  crossAgentRuntime = runtime || null;
+}
 
 // ── send_letter ───────────────────────────────────────────────────────
 
@@ -150,7 +179,7 @@ register("send_letter", {
         };
       }
 
-      const result = sendLetter({
+      const result = await getCrossAgentRuntime().sendMessage({
         from: cwd,
         to: toPath,
         title: args.title,
@@ -173,7 +202,7 @@ register("send_letter", {
           crossAgentConfig.onProgress({ type: "waiting", letterId: result.id, title: args.title, to: toPath });
         }
         try {
-          const reply = await waitForReply({
+          const reply = await getCrossAgentRuntime().awaitResult({
             repoPath: cwd,
             letterId: result.id,
             timeoutMs: args.wait_timeout_ms || DEFAULT_REPLY_TIMEOUT_MS,
@@ -246,7 +275,11 @@ register("check_reply", {
   },
   async execute(args, { cwd }) {
     try {
-      const reply = checkForReply(cwd, args.letter_id);
+      const reply = await getCrossAgentRuntime().receiveMessage({
+        repoPath: cwd,
+        mailbox: "reply",
+        letterId: args.letter_id,
+      });
       if (!reply) {
         return {
           status: "pending",
@@ -297,7 +330,11 @@ register("read_inbox", {
       if (args.type && args.type !== "all") filter.type = args.type;
       if (args.status && args.status !== "all") filter.status = args.status;
 
-      const letters = readInbox(cwd, filter);
+      const letters = await getCrossAgentRuntime().receiveMessage({
+        repoPath: cwd,
+        mailbox: "inbox",
+        filter,
+      });
 
       if (letters.length === 0) {
         return { letters: [], message: "Inbox is empty." };
@@ -337,7 +374,10 @@ register("read_outbox", {
   },
   async execute(_args, { cwd }) {
     try {
-      const letters = readOutbox(cwd);
+      const letters = await getCrossAgentRuntime().receiveMessage({
+        repoPath: cwd,
+        mailbox: "outbox",
+      });
 
       if (letters.length === 0) {
         return { letters: [], message: "Outbox is empty. No letters sent." };
