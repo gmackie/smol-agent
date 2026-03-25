@@ -261,8 +261,8 @@ class FooterBar {
   invalidate() {}
 
   render(width) {
-    const { modelName, tokenUsage, gitStats } = this.getState();
-    return [buildContextBar(modelName, tokenUsage, gitStats, width)];
+    const { modelName, tokenUsage, gitStats, protectionLevel } = this.getState();
+    return [buildContextBar(modelName, tokenUsage, gitStats, width, protectionLevel)];
   }
 }
 
@@ -476,11 +476,16 @@ async function getGitStats(cwd) {
 /**
  * Build the left part of the context bar (version + model + token usage).
  */
-function buildContextBarLeft(modelName, tokenUsage) {
+function buildContextBarLeft(modelName, tokenUsage, protectionLevel) {
   const version = packageJson.version;
   const versionPart = chalk.dim(`smol-agent v${version}`);
   const modelPart = chalk.magenta(modelName || "");
-  const leftPart = versionPart + chalk.dim(" | ") + modelPart;
+  // Show protection badge for governed hosts (non-LocalHost)
+  const badgeColors = { standard: chalk.green, protected: chalk.yellow, controlled: chalk.red, locked: chalk.red.bold };
+  const protectionBadge = protectionLevel && protectionLevel !== "standard"
+    ? chalk.dim(" | ") + (badgeColors[protectionLevel] || chalk.cyan)(`[${protectionLevel.toUpperCase()}]`)
+    : "";
+  const leftPart = versionPart + chalk.dim(" | ") + modelPart + protectionBadge;
   if (!tokenUsage) return " " + leftPart + chalk.dim(" |");
   const { percentage, used, max } = tokenUsage;
   const barWidth = 10;
@@ -512,8 +517,8 @@ function buildContextBarRight(gitStats) {
 /**
  * Build the full context bar with right-justified git stats.
  */
-function buildContextBar(modelName, tokenUsage, gitStats, width) {
-  const leftPart = buildContextBarLeft(modelName, tokenUsage);
+function buildContextBar(modelName, tokenUsage, gitStats, width, protectionLevel) {
+  const leftPart = buildContextBarLeft(modelName, tokenUsage, protectionLevel);
   const rightPart = buildContextBarRight(gitStats);
 
   if (!rightPart) return leftPart;
@@ -561,10 +566,12 @@ export function startApp(agent, initialPrompt, options = {}) {
     approvalState,
   }), tui);
 
+  const protectionLevel = agent.host?.runtimeContext?.tieredRouter?.protectionLevel;
   const footerBar = new FooterBar(() => ({
     modelName: agent.model,
     tokenUsage,
     gitStats,
+    protectionLevel,
   }));
 
   const editor = new Editor(tui, editorTheme);
