@@ -25,6 +25,7 @@
 import { BaseLLMProvider, MAX_RETRIES } from "./base.js";
 import { formatAPIError } from "./errors.js";
 import { DEFAULT_MAX_TOKENS } from "../constants.js";
+import { buildRuntimeHeaders } from "../runtime/request-context.js";
 
 export class OpenAICompatibleProvider extends BaseLLMProvider {
   /**
@@ -35,7 +36,7 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
    * @param {string} [options.providerName] - Display name for this provider
    * @param {object} [options.rateLimitConfig]
    */
-  constructor({ apiKey, baseURL, model, providerName, rateLimitConfig } = {}) {
+  constructor({ apiKey, baseURL, model, providerName, rateLimitConfig, defaultHeaders, runtimeContext } = {}) {
     super({
       model,
       rateLimitConfig: rateLimitConfig || {
@@ -47,6 +48,10 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
     });
 
     this.apiKey = apiKey;
+    this.defaultHeaders = {
+      ...(runtimeContext ? buildRuntimeHeaders(runtimeContext) : {}),
+      ...(defaultHeaders || {}),
+    };
     this.baseURL = (baseURL || "https://api.openai.com/v1").replace(/\/+$/, "");
 
     // Special handling for Gemini's OpenAI-compatible endpoint
@@ -89,7 +94,10 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
   }
 
   _headers() {
-    const h = { "Content-Type": "application/json" };
+    const h = {
+      "Content-Type": "application/json",
+      ...this.defaultHeaders,
+    };
     if (this.apiKey) {
       h["Authorization"] = `Bearer ${this.apiKey}`;
     }
