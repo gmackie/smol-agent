@@ -1,11 +1,18 @@
 /**
  * LLM-based conversation summarization.
- * 
+ *
  * Based on research from Aider and other coding agents:
  * - Uses LLM to create intelligent summaries preserving key context
  * - Maintains file/function/library names mentioned
  * - Writes from user's first-person perspective
  * - Progressive summarization (older = shorter)
+ *
+ * Key exports:
+ *   - summarizeMessagesWithLLM(messages, provider, model): Main summarization function
+ *   - selectMessagesToSummarize(messages, config): Choose which messages to summarize
+ *
+ * Dependencies: ./logger.js, ./providers/base.js
+ * Depended on by: src/context-manager.js, src/providers/base.js, test/unit/context-summarizer.test.js
  */
 
 import { logger } from './logger.js';

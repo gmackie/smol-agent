@@ -1,3 +1,23 @@
+/**
+ * Plan persistence utilities for the planning tools.
+ *
+ * Saves plans to markdown files and tracks progress in a JSON state file.
+ * Plans are stored in the project root as PLAN-{slug}-{timestamp}.md
+ * Progress is tracked in .smol-agent/state/plan-progress.json
+ *
+ * Key exports:
+ *   - savePlan(description, content, cwd): Create a plan file
+ *   - savePlanProgress(filename, step, status, details, cwd): Update progress
+ *   - loadPlanProgress(cwd): Load all plan progress
+ *   - getCurrentPlan(cwd): Get the currently active plan
+ *   - markPlanCompleted(filename, cwd): Mark a plan as done
+ *   - updatePlanStatus(filename, status, cwd): Change plan status
+ *
+ * Dependencies: node:fs/promises, node:path, ../path-utils.js
+ * Depended on by: src/acp-server.js, src/agent.js, src/tools/plan_tools.js,
+ *                  src/tools/registry.js, test/e2e/scenarios/51-plan-tool.test.js,
+ *                  test/e2e/scenarios/53-progressive-discovery.test.js
+ */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { resolveJailedPath } from "../path-utils.js";

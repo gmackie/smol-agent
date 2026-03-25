@@ -2,7 +2,20 @@
  * LLM-as-Judge utilities for E2E test scenarios.
  *
  * Uses an LLM to semantically evaluate whether an agent performed the right
- * actions, replacing brittle regex checks.
+ * actions, replacing brittle regex checks. This allows more flexible scoring
+ * of agent behavior that accounts for different valid approaches.
+ *
+ * Key exports:
+ *   - buildActionLog(events): Format events.timeline into readable action log
+ *   - judgeResponse(prompt, actionLog, expected): Ask LLM to score agent actions
+ *   - judgeContains(prompt, actionLog, expected): Check if agent achieved goal
+ *   - judgeFileExists(prompt, actionLog, filePath): Verify file was created
+ *
+ * Dependencies: ../../src/ollama.js, ./config.js
+ * Depended on by: test/e2e/scenarios/42-debug-broken-server.test.js,
+ *                  test/e2e/scenarios/43-build-rest-api.test.js,
+ *                  test/e2e/scenarios/44-python-server-fix.test.js,
+ *                  test/e2e/scenarios/45-multi-file-server.test.js
  */
 
 import { chatWithRetry, createClient } from "../../src/ollama.js";

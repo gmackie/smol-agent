@@ -1,3 +1,25 @@
+/**
+ * Sub-agent tool — spawns a focused agent for research tasks.
+ *
+ * When the main agent needs to explore unfamiliar code, search across many files,
+ * or gather information without polluting its context window, it can delegate
+ * to a sub-agent with a clean context. The sub-agent has read-only tools and
+ * returns a condensed result.
+ *
+ * Design:
+ *   - Sub-agent starts with an empty context (no conversation history)
+ *   - Only has read-only tools: read_file, list_files, grep, ask_user
+ *   - Maximum 15 iterations to prevent runaway exploration
+ *   - Tool results truncated to 8000 chars to stay small
+ *   - Returns condensed summary to parent agent
+ *
+ * Key exports:
+ *   - setSubAgentConfig(cfg): Configure with parent's provider/settings
+ *   - Tool registration: delegate
+ *
+ * Dependencies: ./registry.js, ../logger.js, ../errors.js, ../tool-call-parser.js
+ * Depended on by: src/acp-server.js, src/agent.js, src/ui/App.js, test/e2e/harness.js
+ */
 import { register } from "./registry.js";
 import * as registry from "./registry.js";
 import { logger } from "../logger.js";

@@ -1,8 +1,15 @@
 /**
- * Unit tests for settings module
- * Tests loading and saving settings with security restrictions
+ * Unit tests for settings module.
+ *
+ * Tests loading and saving settings with security restrictions:
+ * - loadSettings: Loading settings from .smol-agent/settings.json
+ * - saveSettings: Saving settings to file
+ * - saveSetting: Updating individual settings
+ * - Security: Ensuring settings stay within project directory
+ *
+ * Dependencies: @jest/globals, node:fs, node:path,
+ *               ../../src/settings.js, ../test-utils.js
  */
-
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
 import fs from 'node:fs';
 import path from 'node:path';

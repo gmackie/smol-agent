@@ -1,3 +1,15 @@
+/**
+ * Unit tests for checkpoint.js
+ *
+ * Tests the git checkpoint system:
+ * - createCheckpoint: Creating snapshots before agent runs
+ * - rollbackToCheckpoint: Restoring from last checkpoint
+ * - Shadow repo management: Isolated git state for snapshots
+ * - Working with untracked files: Including them in checkpoints
+ *
+ * Dependencies: @jest/globals, node:fs, node:path, node:os, node:child_process,
+ *               ../../src/checkpoint.js
+ */
 import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import fs from "node:fs";
 import path from "node:path";

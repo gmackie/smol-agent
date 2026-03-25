@@ -1,5 +1,22 @@
 /**
  * E2E test harness — Agent factory, event collector, scoring, file helpers.
+ *
+ * Provides utilities for end-to-end testing of the agent:
+ *   - createTestAgent(opts): Create an Agent with fresh temp directory
+ *   - runWithTimeout(agent, prompt, ms): Run with wall-clock timeout
+ *   - collectEvents(agent): Collect events into timeline
+ *   - check(events, predicate): Assert a condition on events
+ *   - scoreResult(result): Score agent response (pass/fail/pending)
+ *   - seedFile(tmpDir, path, content): Create a file in temp dir
+ *   - readResult(events): Extract final response text
+ *   - fileExists(tmpDir, path): Check if file exists
+ *   - listFiles(tmpDir, path): List files in directory
+ *   - cleanup(tmpDir): Remove temp directory
+ *   - dumpConversation(events): Format events for debugging
+ *
+ * Dependencies: node:fs, node:fs/promises, node:path, node:os,
+ *               ../../src/agent.js, ./config.js
+ * Depended on by: test/e2e/scenarios/*.test.js (all E2E scenarios)
  */
 
 import fs from "node:fs";

@@ -1,3 +1,23 @@
+/**
+ * File manipulation tools for smol-agent.
+ *
+ * Core file operations that modify the filesystem:
+ *   - read_file: Read file contents with optional line range
+ *   - write_file: Create or overwrite a file
+ *   - replace_in_file: Find and replace text in a file
+ *   - list_files: List files matching a glob pattern
+ *   - grep: Search file contents with regex
+ *
+ * Security: All paths must resolve within the jail directory (set via setJailDirectory).
+ *
+ * Fuzzy matching: replace_in_file uses Kilocode-inspired fuzzy matching to find
+ * the best location when oldText doesn't match exactly, improving success rates.
+ *
+ * Dependencies: node:fs, node:path, ./registry.js, ../path-utils.js, ../ts-lint.js,
+ *               ./file_documentation.js (for trackEditedFile)
+ * Depended on by: src/agent.js, src/tools/file_documentation.js,
+ *                  test/unit/code-execution.test.js
+ */
 import fs from "node:fs";
 import path from "node:path";
 import { register } from "./registry.js";

@@ -3,12 +3,19 @@
 /**
  * E2E test runner — sequential orchestrator with JSON output, retry, and filtering.
  *
+ * Runs all E2E test scenarios in sequence, collects results, and outputs
+ * a summary. Supports filtering by scenario name, JSON output for CI,
+ * and retry logic for flaky tests.
+ *
  * Usage:
  *   node test/e2e/runner.js                    # human-readable to stdout
  *   node test/e2e/runner.js --json             # JSON to stdout, progress to stderr
  *   node test/e2e/runner.js --filter file-read # run only matching scenarios
  *   node test/e2e/runner.js --no-retry         # single attempt per scenario
  *   node test/e2e/runner.js --verbose          # include conversation dump on failure
+ *
+ * Dependencies: node:fs, node:path, node:child_process, ollama, ./config.js
+ * Depended on by: npm run test:e2e, test/e2e/compare-results.js (indirect)
  */
 
 import fs from "node:fs";

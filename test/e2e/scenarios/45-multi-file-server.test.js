@@ -1,3 +1,12 @@
+/**
+ * E2E test: Multi-file Express server refactoring.
+ *
+ * Scenario: Agent is given a Node.js HTTP server with multiple route files.
+ * Must understand the server architecture, fix bugs in routes, and verify
+ * endpoints work correctly. Tests multi-file codebase navigation.
+ *
+ * Dependencies: ../config.js, ../llm-judge.js, http, ./routes/user-routes, ./routes/status
+ */
 import {
   createTestAgent, runWithTimeout, collectEvents,
   scoreResult, check, seedFile, readResult, cleanup,

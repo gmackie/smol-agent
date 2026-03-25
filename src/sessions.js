@@ -1,14 +1,29 @@
 /**
  * Session persistence for smol-agent.
- * 
+ *
  * Manages saving and loading of conversation sessions to disk.
  * Sessions are stored as JSON files in .smol-agent/state/sessions/
- * 
+ *
  * Each session contains:
  * - Conversation messages
  * - Metadata (created time, model, provider)
  * - Session name for easy recall
- * 
+ *
+ * Key exports:
+ *   - createSession(name): Create new session metadata
+ *   - saveSession(cwd, session, messages): Persist session to disk
+ *   - loadSession(cwd, sessionId): Load session by ID
+ *   - listSessions(cwd): List all saved sessions
+ *   - deleteSession(cwd, sessionId): Remove a session
+ *   - renameSession(cwd, sessionId, newName): Rename a session
+ *   - findMostRecentSession(cwd): Find latest session for --continue
+ *
+ * Dependencies: node:fs/promises, node:path, node:crypto
+ * Depended on by: src/acp-server.js, src/agent.js, src/constants.js, src/context.js,
+ *                  src/index.js, src/memory-bank.js, src/tools/context_docs.js,
+ *                  src/tools/memory.js, src/tools/session_tools.js, src/ui/App.js,
+ *                  test/e2e/scenarios/54-auto-discovery-context.test.js
+ *
  * @module sessions
  */
 import fs from "node:fs/promises";

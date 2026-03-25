@@ -12,6 +12,15 @@
  *
  * The agent can read all bank files at session start and update them as it
  * learns about the project.
+ *
+ * Key exports:
+ *   - initMemoryBank(cwd): Create memory-bank directory with templates
+ *   - loadMemoryBank(cwd): Load all bank files into structured object
+ *   - readMemoryBankSection(cwd, section): Read a single section
+ *   - writeMemoryBankSection(cwd, section, content): Update a section
+ *
+ * Dependencies: node:fs/promises, node:fs, node:path, ./logger.js
+ * Depended on by: src/context.js, src/tools/memory.js, test/unit/memory-bank.test.js
  */
 
 import fs from "node:fs/promises";

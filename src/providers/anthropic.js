@@ -11,6 +11,15 @@
  *   - Tool definitions use input_schema instead of parameters
  *   - Tool results use tool_result content blocks
  *   - Streaming uses server-sent events with different event types
+ *
+ * Key exports:
+ *   - AnthropicProvider class: Main provider implementation
+ *   - Methods: chatStream(), chatWithRetry(), formatTools()
+ *
+ * Dependencies: ./base.js, ./errors.js
+ * Depended on by: src/agent.js, src/index.js, src/providers/index.js,
+ *                  src/providers/openai-compatible.js, test/unit/providers.test.js,
+ *                  test/unit/vision-support.test.js
  */
 
 import { BaseLLMProvider, MAX_RETRIES } from "./base.js";

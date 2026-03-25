@@ -1,17 +1,28 @@
+/**
+ * Diff visualization for file changes.
+ *
+ * Generates git-style unified diffs with chalk coloring for terminal display.
+ * Shows additions (green), deletions (red), and context lines (dim).
+ *
+ * Key exports:
+ *   - formatDiff(oldText, newText, filePath, opts): Generate unified diff
+ *   - formatReplaceDiff(filePath, oldText, newText, replacement): Diff for replace_in_file
+ *   - formatNewFileDiff(filePath, content): Diff for new file creation
+ *   - computeEditScript(oldLines, newLines): Myers diff algorithm
+ *   - buildHunks(ops, contextLines): Group changes into hunks
+ *
+ * The diff is limited to prevent flooding the TUI (default 40 lines max).
+ * For very large files, returns a summary instead of computing full diff.
+ *
+ * Dependencies: chalk
+ * Depended on by: src/agent.js, src/context.js, src/providers/anthropic.js,
+ *                 src/providers/base.js, src/providers/errors.js, src/tool-call-parser.js,
+ *                 src/tools/cross_agent.js, src/tools/file_tools.js, src/tools/git.js, src/ui/App.js,
+ *                 test/e2e/scenarios/55-git-safety.test.js, test/unit/agent-registry.test.js,
+ *                 test/unit/cross-agent.test.js, test/unit/repo-map.test.js
+ */
 import chalk from "chalk";
 
-/**
- * Generate a git-style unified diff between two texts.
- * Returns an array of chalk-colored strings ready for TUI display.
- *
- * @param {string} oldText  - Original file content (empty string for new files)
- * @param {string} newText  - New file content
- * @param {string} filePath - File path for the diff header
- * @param {object} opts
- * @param {number} opts.contextLines - Number of context lines around changes (default 3)
- * @param {number} opts.maxLines     - Max output lines to prevent flooding the TUI (default 40)
- * @returns {string[]} Array of chalk-styled strings
- */
 export function formatDiff(oldText, newText, filePath, opts = {}) {
   const { contextLines = 3, maxLines = 40 } = opts;
 

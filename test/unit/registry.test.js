@@ -1,8 +1,15 @@
 /**
- * Unit tests for tool registry module
- * Tests tool registration, validation, and execution
+ * Unit tests for tool registry module.
+ *
+ * Tests tool registration, validation, and execution:
+ * - register: Registering tools with descriptions and parameters
+ * - execute: Running tool functions with validation
+ * - getTools: Getting tools in OpenAI format
+ * - getToolGroups, getToolsForGroups: Progressive discovery
+ * - Approval categories and validation
+ *
+ * Dependencies: @jest/globals, ../../src/tools/registry.js
  */
-
 import { describe, test, expect, beforeEach } from '@jest/globals';
 import registry, {
   getStarterGroups,

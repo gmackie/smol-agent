@@ -1,8 +1,14 @@
 /**
- * Unit tests for tool-call-parser module
- * Tests parsing of tool calls from model output
+ * Unit tests for tool-call-parser module.
+ *
+ * Tests parsing of tool calls from model output:
+ * - parseToolCallsFromContent: Extracting tool calls from text
+ * - JSON code block detection
+ * - Fallback parsing for models that emit tool calls as JSON
+ * - Handling malformed tool call JSON
+ *
+ * Dependencies: @jest/globals, ../../src/tool-call-parser.js
  */
-
 import { describe, test, expect } from '@jest/globals';
 import { parseToolCallsFromContent } from '../../src/tool-call-parser.js';
 

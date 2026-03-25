@@ -1,3 +1,12 @@
+/**
+ * E2E test: Debug runtime error from stack trace.
+ *
+ * Scenario: Agent is given a Python script with a runtime error
+ * and must debug it by reading the error message and stack trace,
+ * then fixing the underlying issue.
+ *
+ * Dependencies: ../config.js
+ */
 import {
   createTestAgent, runWithTimeout, collectEvents,
   scoreResult, check, seedFile, readResult, cleanup,

@@ -1,8 +1,11 @@
 /**
- * Scenario 52 — Context docs (save_context)
+ * E2E test: Context docs (save_context tool).
  *
  * Tests that the agent can use the save_context tool to persist
  * dense summaries of explored code areas for future reference.
+ * The context docs are loaded in subsequent sessions via gatherContext.
+ *
+ * Dependencies: node:fs, node:path, ../config.js, bcrypt, jsonwebtoken, ./auth
  */
 import fs from "node:fs";
 import path from "node:path";

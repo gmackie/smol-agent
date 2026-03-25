@@ -1,3 +1,12 @@
+/**
+ * E2E test: Multi-file import refactoring.
+ *
+ * Scenario: Two modules have duplicated utility functions (validateEmail,
+ * sanitizeInput). Agent must extract these into a shared utils module
+ * and update imports in both files without breaking functionality.
+ *
+ * Dependencies: ../config.js
+ */
 import {
   createTestAgent, runWithTimeout, collectEvents,
   scoreResult, check, seedFile, readResult, fileExists, cleanup,

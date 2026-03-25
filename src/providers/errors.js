@@ -1,5 +1,20 @@
 /**
  * Shared error formatting utilities for LLM providers.
+ *
+ * Detects common error patterns across providers and returns
+ * user-friendly error messages with actionable suggestions.
+ *
+ * Key exports:
+ *   - formatAPIError(status, body, provider, envVar): Format HTTP errors
+ *   - detectErrorType(error): Categorize errors for retry logic
+ *
+ * Dependencies: None (pure utility)
+ * Depended on by: src/agent.js, src/constants.js, src/context-manager.js,
+ *                 src/cross-agent.js, src/index.js, src/input-parser.js, src/logger.js,
+ *                 src/providers/anthropic.js, src/providers/base.js, src/providers/openai-compatible.js,
+ *                 src/shift-left.js, src/token-estimator.js, src/tools/registry.js,
+ *                 src/tools/sub_agent.js, src/tools/web_search.js, src/ts-lint.js,
+ *                 test/e2e/harness.js, test/unit/errors.test.js
  */
 
 /**

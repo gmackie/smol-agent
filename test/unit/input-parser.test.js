@@ -1,7 +1,15 @@
 /**
- * Tests for input parser - @file mentions and image attachments
+ * Unit tests for input parser - @file mentions and image attachments.
+ *
+ * Tests parsing user input for:
+ * - @file/path syntax for file inclusion
+ * - Image attachment detection and base64 encoding
+ * - Path resolution within jail directory
+ * - Security validation for paths
+ *
+ * Dependencies: @jest/globals, node:fs/promises, node:path, node:os,
+ *               ../../src/input-parser.js
  */
-
 import { describe, test, expect, beforeEach, afterEach } from "@jest/globals";
 import fs from "node:fs/promises";
 import path from "node:path";

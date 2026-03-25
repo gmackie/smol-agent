@@ -1,11 +1,24 @@
 #!/usr/bin/env node
 
 /**
- * Compare E2E test results from multiple models
+ * Compare E2E test results from multiple models.
+ *
+ * Reads JSON result files from benchmark runs and produces a comparison
+ * table showing pass rates, timing, and failure counts for each model.
  *
  * Usage:
  *   node test/e2e/compare-results.js results-*.json
  *   node test/e2e/compare-results.js --dir ./benchmark-results/
+ *
+ * Output:
+ *   Prints a formatted table to stdout with:
+ *   - Model name
+ *   - Pass rate (passed/total)
+ *   - Average time
+ *   - Failure count
+ *
+ * Dependencies: node:fs, node:path
+ * Depended on by: scripts/update-benchmark-readme.js (indirect)
  */
 
 import fs from "node:fs";

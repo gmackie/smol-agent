@@ -1,3 +1,15 @@
+/**
+ * Unit tests for code_execution tool.
+ *
+ * Tests the sandboxed JavaScript execution environment:
+ * - Tool availability in sandbox (read_file, grep, list_files)
+ * - Batched tool calls (multiple tools in one execution)
+ * - Error handling and stdout/stderr capture
+ * - Jail directory enforcement for file operations
+ * - Timeout handling for long-running code
+ *
+ * Dependencies: ../../src/tools/registry.js, node:fs, node:path, node:os, events
+ */
 import { register as _register, execute, setJailDirectory } from "../../src/tools/registry.js";
 import fs from "node:fs";
 import path from "node:path";

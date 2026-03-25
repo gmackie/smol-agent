@@ -6,6 +6,14 @@
  *   - Images: Base64-encode for vision models
  *
  * Security: All paths must resolve within the jail directory.
+ *
+ * Key exports:
+ *   - parseInput(userMessage, cwd, options): Main parser function
+ *   - IMAGE_EXTENSIONS: Set of supported image extensions
+ *   - AT_MENTION_RE: Regex for @file mentions
+ *
+ * Dependencies: node:fs/promises, node:path, ./logger.js
+ * Depended on by: test/unit/input-parser.test.js (only direct consumer)
  */
 
 import fs from 'node:fs/promises';

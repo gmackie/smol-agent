@@ -17,6 +17,19 @@
  *   GROQ_API_KEY            — for groq provider
  *   GEMINI_API_KEY          — for gemini provider
  *   ANTHROPIC_API_KEY       — for anthropic provider
+ *
+ * Key exports:
+ *   - createProvider(options): Factory function returning configured provider
+ *   - PROVIDER_PRESETS: Known provider configurations
+ *
+ * Dependencies: ./ollama.js, ./openai-compatible.js, ./anthropic.js, ./base.js
+ * Depended on by: jest.config.js, scripts/update-benchmark-readme.js, src/agent.js,
+ *                  src/checkpoint.js, src/context-manager.js, src/cross-agent.js, src/index.js,
+ *                  src/ollama.js, src/providers/openai-compatible.js, src/repo-map.js,
+ *                  src/skills.js, src/token-estimator.js, src/tools/code_execution.js,
+ *                  src/tools/file_tools.js, src/tools/git.js, src/tools/plan_tools.js,
+ *                  src/ui/App.js, src/ui/diff.js, test/e2e/compare-results.js,
+ *                  test/e2e/runner.js, test/unit/providers.test.js
  */
 
 import { OllamaProvider, DEFAULT_MODEL as OLLAMA_DEFAULT_MODEL } from "./ollama.js";

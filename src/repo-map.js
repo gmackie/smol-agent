@@ -17,6 +17,17 @@
  *   - Extracts top-level symbols (functions, classes, types, exports)
  *   - Fits the map within a configurable token budget
  *   - Caches results for fast re-use within a session
+ *
+ * Key exports:
+ *   - buildRepoMap(cwd, options): Build a repo map string
+ *   - clearRepoMapCache(): Clear the cached map
+ *   - computePageRank(files): Compute importance scores for files
+ *
+ * Dependencies: node:module, node:fs/promises, node:path, ./logger.js,
+ *               graphology, graphology-metrics/centrality/pagerank, tree-sitter,
+ *               tree-sitter-javascript, tree-sitter-typescript, tree-sitter-python,
+ *               tree-sitter-go, tree-sitter-rust, tree-sitter-java, tree-sitter-ruby
+ * Depended on by: src/context.js, test/unit/repo-map.test.js
  */
 
 import { createRequire } from "node:module";

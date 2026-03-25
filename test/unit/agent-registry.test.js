@@ -1,3 +1,15 @@
+/**
+ * Unit tests for agent-registry.js
+ *
+ * Tests the global agent registry functionality:
+ * - Agent registration and self-registration
+ * - Relationship management between agents (depends-on, serves, consumes, related)
+ * - Snippet-based agent discovery for tasks
+ * - Concurrency-safe file locking
+ * - Stale lock detection and cleanup
+ *
+ * Dependencies: @jest/globals, node:fs, node:path, node:os
+ */
 import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import fs from "node:fs";
 import path from "node:path";

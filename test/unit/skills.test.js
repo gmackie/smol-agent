@@ -1,7 +1,16 @@
 /**
- * Unit tests for skills module (SKILL.md format)
+ * Unit tests for skills module (SKILL.md format).
+ *
+ * Tests skill loading and validation:
+ * - parseFrontmatter: Parsing YAML frontmatter from skill files
+ * - validateSkillName: Validating skill name format
+ * - validateSkillDescription: Validating description length
+ * - loadSkills: Loading skills from local and global directories
+ * - loadSkillResource: Loading specific skill by name
+ *
+ * Dependencies: @jest/globals, node:fs, node:path,
+ *               ../../src/skills.js, ../test-utils.js
  */
-
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
 import fs from 'node:fs';
 import path from 'node:path';

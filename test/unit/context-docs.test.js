@@ -1,7 +1,16 @@
 /**
- * Unit tests for context docs (save_context tool + loadContextDocs)
+ * Unit tests for context docs (save_context tool + loadContextDocs).
+ *
+ * Tests the context documentation system:
+ * - save_context: Persisting summaries of code areas
+ * - loadContextDocs: Loading saved context docs into gatherContext
+ * - .smol-agent/docs directory management
+ * - Context doc format and parsing
+ *
+ * Dependencies: @jest/globals, node:fs, node:path,
+ *               ../../src/tools/registry.js, ../../src/tools/context_docs.js,
+ *               ../test-utils.js
  */
-
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
 import fs from 'node:fs';
 import path from 'node:path';

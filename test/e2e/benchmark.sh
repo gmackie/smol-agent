@@ -1,13 +1,23 @@
 #!/usr/bin/env bash
-
-# Local model benchmark runner
+#
+# Local model benchmark runner for smol-agent E2E tests.
+#
+# Runs the full E2E test suite against multiple LLM models and collects
+# results for comparison. Supports both local Ollama models and cloud models.
 #
 # Usage:
 #   ./test/e2e/benchmark.sh                    # Test default models
 #   ./test/e2e/benchmark.sh qwen2.5:7b phi3    # Test specific models
-#   ./test/e2e/benchmark.sh --quick            # Single retry, faster
-
-set -e
+#   ./test/e2e/benchmark.sh --quick             # Single retry, faster
+#
+# Output:
+#   Creates benchmark-results-YYYYMMDD-HHMMSS/ with:
+#   - results-{model}.json for each model
+#   - Aggregate pass rates and timing
+#
+# Dependencies: node, npm, ollama (or OLLAMA_HOST env)
+# Depended on by: scripts/update-benchmark-readme.js, test/e2e/compare-results.js
+#
 
 # Default Ollama cloud models (fast, reliable, coding-optimized)
 # When OLLAMA_HOST=https://ollama.com, these run on cloud infrastructure

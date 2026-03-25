@@ -12,6 +12,14 @@
  *
  * Uses the standard OpenAI chat completions API with tool calling support.
  * No SDK dependency — uses native fetch for maximum compatibility.
+ *
+ * Key exports:
+ *   - OpenAICompatibleProvider class: Main provider implementation
+ *   - Methods: chatStream(), chatWithRetry(), listModels(), formatTools()
+ *
+ * Dependencies: ./base.js, ./errors.js, ../constants.js
+ * Depended on by: src/providers/index.js, test/unit/providers.test.js,
+ *                  test/unit/vision-support.test.js
  */
 
 import { BaseLLMProvider, MAX_RETRIES } from "./base.js";

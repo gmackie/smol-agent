@@ -1,9 +1,61 @@
+/**
+ * Tool registry — registers tools and provides them in standard tool-call format.
+ *
+ * Core responsibilities:
+ *   - Register tools with descriptions, parameters, and execution functions
+ *   - Provide tools in OpenAI function-calling format
+ *   - Manage jail directory for path validation
+ *   - Support progressive tool discovery with tool groups
+ *   - Handle tool approval categories (read, edit, execute)
+ *
+ * Tool groups:
+ *   - core: Always available (read_file, write_file, replace_in_file, list_files, grep, run_command, ask_user)
+ *   - plan: save_plan, load_plan_progress, get_current_plan, complete_plan_step, update_plan_status, reflect
+ *   - memory: remember, recall, memory_bank_read, memory_bank_write, memory_bank_init, save_context
+ *   - web: web_search, web_fetch
+ *   - multi_agent: delegate, send_letter, check_reply, read_inbox, read_outbox, reply_to_letter, list_agents, link_repos, set_snippet, find_agent_for_task
+ *
+ * Key exports:
+ *   - register(name, def): Register a tool
+ *   - getTools(): Get all registered tools in OpenAI format
+ *   - execute(name, args, context): Execute a tool
+ *   - setJailDirectory(dir), getJailDirectory(): Jail path management
+ *   - getToolGroups(), getToolsForGroups(), describeInactiveGroups(): Tool discovery
+ *
 import path from 'node:path';
 import { logger } from '../logger.js';
 
 /**
  * Tool registry — registers tools and provides them in standard tool-call format.
+ *
+ * Core responsibilities:
+ *   - Register tools with descriptions, parameters, and execution functions
+ *   - Provide tools in OpenAI function-calling format
+ *   - Manage jail directory for path validation
+ *   - Support progressive tool discovery with tool groups
+ *   - Handle tool approval categories (read, edit, execute)
+ *
+ * Tool groups:
+ *   - core: Always available (read_file, write_file, replace_in_file, list_files, grep, run_command, ask_user)
+ *   - plan: save_plan, load_plan_progress, get_current_plan, complete_plan_step, update_plan_status, reflect
+ *   - memory: remember, recall, memory_bank_read, memory_bank_write, memory_bank_init, save_context
+ *   - web: web_search, web_fetch
+ *   - multi_agent: delegate, send_letter, check_reply, read_inbox, read_outbox, reply_to_letter, list_agents, link_repos, set_snippet, find_agent_for_task
+ *
+ * Key exports:
+ *   - register(name, def): Register a tool
+ *   - getTools(): Get all registered tools in OpenAI format
+ *   - execute(name, args, context): Execute a tool
+ *   - setJailDirectory(dir), getJailDirectory(): Jail path management
+ *   - getToolGroups(), getToolsForGroups(), describeInactiveGroups(): Tool discovery
+ *
+ * Dependencies: node:path, ../logger.js
+ * Depended on by: src/acp-server.js, src/agent-registry.js, src/agent.js, src/architect.js,
+ *                  src/context.js, src/cross-agent.js, src/lru-tool-cache.js, src/tools/*.js (all tools),
+ *                  src/ui/App.js, test/unit/registry.test.js
  */
+import path from 'node:path';
+import { logger } from '../logger.js';
 
 const tools = new Map();
 

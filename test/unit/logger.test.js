@@ -1,8 +1,14 @@
 /**
- * Unit tests for logger module
- * Tests log level filtering, formatting, and transient error detection
+ * Unit tests for logger module.
+ *
+ * Tests log level filtering, formatting, and transient error detection:
+ * - createLogger: Creating logger with different levels
+ * - formatError: Formatting errors for log output
+ * - isTransientError: Detecting transient vs permanent errors
+ * - Log level filtering (debug, info, warn, error)
+ *
+ * Dependencies: @jest/globals, ../../src/logger.js
  */
-
 import { describe, test, expect } from '@jest/globals';
 import { createLogger, formatError, isTransientError, LEVELS } from '../../src/logger.js';
 

@@ -1,5 +1,5 @@
 /**
- * Cross-Agent Communication Tools
+ * Cross-Agent Communication Tools.
  *
  * Exposes the inbox/letter protocol and agent registry to agents as tool calls:
  *   - send_letter: Send a work request to another agent's inbox (supports name lookup)
@@ -11,6 +11,15 @@
  *   - link_repos: Create a relationship between two repos in the registry
  *   - set_snippet: Set the snippet for this repo so other agents can find it
  *   - find_agent_for_task: Find the best agent to handle a task based on snippets
+ *
+ * Key exports:
+ *   - setCrossAgentConfig(cfg): Set progress callback for UI events
+ *   - Tool registrations: send_letter, check_reply, read_inbox, read_outbox,
+ *                         reply_to_letter, list_agents, link_repos, set_snippet,
+ *                         find_agent_for_task
+ *
+ * Dependencies: ./registry.js, ../logger.js, node:fs, node:path
+ * Depended on by: src/agent.js, src/ui/App.js
  */
 
 import { register } from "./registry.js";

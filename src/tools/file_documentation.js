@@ -8,18 +8,14 @@
  *   - Its dependencies (imports/requires)
  *   - What depends on it (reverse dependency analysis)
  *
- * This module is consumed by the reflection tool (src/tools/reflection.js)
- * and the /reflect UI command (src/ui/App.js) to keep documentation
- * up-to-date as the agent modifies the codebase.
+ * Key exports:
+ *   - trackEditedFile(path): Add a file to the edited-files set
+ *   - getEditedFiles(): Return all tracked edited files
+ *   - analyzeFilesForDocumentation(agent): Main entry for reflection tool
+ *   - findDependents(file, cwd): Find files that depend on target file
  *
- * Dependencies:
- *   - node:fs, node:path (built-in)
- *   - ../path-utils.js (resolveJailedPath)
- *
- * Depended on by:
- *   - src/tools/reflection.js (uses analyzeFilesForDocumentation)
- *   - src/tools/file_tools.js (calls trackEditedFile on writes/edits)
- *   - src/ui/App.js (uses getEditedFiles in /reflect)
+ * Dependencies: node:fs, node:path, path (unused - remove), ./registry.js (unused - remove)
+ * Depended on by: src/agent.js, src/tools/file_tools.js, src/tools/reflection.js, src/ui/App.js
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -147,7 +143,7 @@ export function extractDependencies(filePath, content) {
 export function findDependents(targetFile, cwd) {
   const dependents = [];
   const targetBasename = path.basename(targetFile, path.extname(targetFile));
-  const targetRelDir = path.dirname(targetFile);
+  const _targetRelDir = path.dirname(targetFile);
 
   // Build search patterns from the target file name
   const searchPatterns = [
@@ -256,7 +252,7 @@ export function analyzeFilesForDocumentation(cwd, filePaths) {
     // Only process files that exist and are source code
     if (!fs.existsSync(absPath)) continue;
 
-    const ext = path.extname(absPath).slice(1).toLowerCase();
+    const _ext = path.extname(absPath).slice(1).toLowerCase();
     if (!getCommentStyle(absPath)) continue; // Skip unknown file types
 
     let content;

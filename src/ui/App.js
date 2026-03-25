@@ -1,3 +1,31 @@
+/**
+ * Terminal UI for smol-agent using pi-tui.
+ *
+ * Provides a rich terminal interface with:
+ *   - Message log with markdown rendering and syntax highlighting
+ *   - Input field with autocomplete for commands and file paths
+ *   - Real-time progress display during agent runs
+ *   - Ask/user interaction flow for questions
+ *   - Slash commands: /clear, /undo, /reflect, /architect, /model, /checkpoint
+ *
+ * Key components:
+ *   - App class: Main TUI component (extends TUI)
+ *   - Message rendering: Markdown with code highlighting, diff visualization
+ *   - Autocomplete: Commands, file paths, agent names
+ *   - Event handling: Agent events → UI updates
+ *
+ * Dependencies: @mariozechner/pi-tui, chalk, node:module, node:fs, node:path,
+ *               node:child_process, node:url, ../tools/ask_user.js, ./diff.js,
+ *               ../settings.js, ../ollama.js, ../logger.js, ../tools/file_documentation.js,
+ *               ../skills.js, tree-sitter
+ * Depended on by: src/acp-server.js, src/agent.js, src/constants.js, src/index.js,
+ *                  src/input-parser.js, src/repo-map.js, src/settings.js,
+ *                  src/tools/file_documentation.js, src/tools/file_tools.js,
+ *                  src/tools/reflection.js, src/tools/registry.js, src/tools/session_tools.js,
+ *                  test/e2e/scenarios/06-grep-search.test.js, test/e2e/scenarios/34-implement-linked-list.test.js,
+ *                  test/e2e/scenarios/58-tool-error-recovery.test.js, test/unit/context-docs.test.js,
+ *                  test/unit/registry.test.js, test/unit/repo-map.test.js, test/unit/settings.test.js
+ */
 import {
   ProcessTerminal,
   TUI,

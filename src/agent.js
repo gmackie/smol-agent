@@ -1,6 +1,6 @@
 /**
  * Core agent loop for smol-agent.
- * 
+ *
  * This module implements the main Agent class that drives the conversation
  * with the LLM provider. It handles:
  * - Tool call execution and result feeding
@@ -8,10 +8,27 @@
  * - Error handling and retries
  * - Session persistence
  * - Cross-agent communication
- * 
+ * - Shift-left lint feedback
+ * - Checkpoint creation and rollback
+ *
  * The agent runs in a loop: send messages → receive response → execute tools → repeat
  * until the model produces a text response (no tool calls).
- * 
+ *
+ * Key components:
+ * - Agent class (extends EventEmitter): Main agent with run(), cancel(), reset() methods
+ * - parseThinkingContent(): Extracts <thinking> blocks from model output
+ * - analyzeToolResults(): Generates self-correction suggestions from failures
+ * - System prompt construction with context injection
+ *
+ * Dependencies: node:events, ./providers/index.js, ./tools/registry.js, ./context.js,
+ *               ./logger.js, ./context-manager.js, ./tools/save_plan.js, ./tool-call-parser.js,
+ *               ./errors.js, ./prehydrate.js, ./token-estimator.js, ./shift-left.js,
+ *               ./architect.js, ./checkpoint.js, ./agent-registry.js, ./cross-agent.js,
+ *               ./tools/*.js (all tools imported for self-registration), ./lru-tool-cache.js,
+ *               ./constants.js, ollama (optional, for web search/fetch clients)
+ * Depended on by: src/acp-server.js, src/index.js, src/ui/App.js, test/e2e/harness.js,
+ *                 test/unit/*.test.js, test/e2e/scenarios/*.test.js (extensive)
+ *
  * @module agent
  */
 import { EventEmitter } from "node:events";
@@ -54,7 +71,6 @@ import { setOllamaClient as setFetchClient } from "./tools/web_fetch.js";
 import "./tools/ask_user.js";
 import "./tools/plan_tools.js";
 import "./tools/reflection.js";
-import "./tools/file_documentation.js";
 import { getEditedFiles } from "./tools/file_documentation.js";
 import "./tools/memory.js";
 import { setSubAgentConfig } from "./tools/sub_agent.js";

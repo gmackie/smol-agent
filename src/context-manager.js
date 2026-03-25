@@ -1,17 +1,27 @@
 /**
  * Context management for conversation history.
- * 
+ *
  * Based on research from Aider, Pydantic AI, and other coding agents:
  * - Proactive pruning before hitting limits
  * - LLM-based intelligent summarization
  * - Prioritizes recent context while preserving key information
  * - Handles tool results specially (they can be large)
- * 
+ *
  * Key strategies:
  * 1. At 60% capacity: Start summarizing old messages
  * 2. At 70% capacity: Prune tool results and old messages
  * 3. At 85% capacity: Aggressive pruning
  * 4. On overflow: Emergency reduction
+ *
+ * Key exports:
+ *   - ContextManager class: Manages message history with token tracking
+ *   - getContextConfig(modelName): Get config based on model size
+ *   - calculateMessageImportance(msg): Score message for retention priority
+ *   - truncateText(text, maxTokens): Truncate large text safely
+ *
+ * Dependencies: ./logger.js, ./errors.js, ./context-summarizer.js,
+ *               ./token-estimator.js, ./constants.js, ./providers/base.js
+ * Depended on by: src/agent.js, src/errors.js, test/unit/context-manager.test.js
  */
 
 import { logger } from './logger.js';

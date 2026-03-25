@@ -1,8 +1,14 @@
 /**
- * Unit tests for context-summarizer module
- * Tests message summarization and selection logic
+ * Unit tests for context-summarizer module.
+ *
+ * Tests message summarization and selection logic:
+ * - selectMessagesToSummarize: Choosing which messages to summarize
+ * - createSimpleSummary: Generating summaries
+ * - Token counting and budget management
+ * - Preserving important context (system messages, recent turns)
+ *
+ * Dependencies: @jest/globals, ../../src/context-summarizer.js
  */
-
 import { describe, test, expect } from '@jest/globals';
 import { selectMessagesToSummarize, createSimpleSummary } from '../../src/context-summarizer.js';
 

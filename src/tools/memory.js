@@ -1,3 +1,28 @@
+/**
+ * Memory tools for persistent key-value storage.
+ *
+ * Two types of memory:
+ *   - Simple key-value: .smol-agent/memory.json (remember, recall)
+ *   - Structured Memory Bank: .smol-agent/memory-bank/*.md (projectContext, techContext, etc.)
+ *
+ * Simple memory is for ad-hoc facts and preferences. The Memory Bank is for
+ * structured cross-session knowledge about the project.
+ *
+ * Key exports:
+ *   - loadMemories(cwd): Load simple key-value memories
+ *   - Tool registrations: remember, recall, memory_bank_init, memory_bank_read,
+ *                        memory_bank_write, save_context
+ *
+ * Dependencies: ./registry.js, node:fs/promises, node:path, ../path-utils.js,
+ *               ../memory-bank.js
+ * Depended on by: src/agent.js, src/constants.js, src/context.js, src/memory-bank.js,
+ *                  src/tools/discover_tools.js, src/tools/registry.js,
+ *                  test/e2e/scenarios/38-add-error-handling.test.js,
+ *                  test/e2e/scenarios/41-cpp-fix-memory-bug.test.js,
+ *                  test/e2e/scenarios/50-memory-tool.test.js,
+ *                  test/e2e/scenarios/54-auto-discovery-context.test.js,
+ *                  test/unit/memory-bank.test.js, test/unit/registry.test.js
+ */
 import { register } from "./registry.js";
 import fs from "node:fs/promises";
 import path from "node:path";

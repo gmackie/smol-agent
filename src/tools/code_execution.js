@@ -1,5 +1,5 @@
 /**
- * Code Execution Tool — Programmatic Tool Calling
+ * Code Execution Tool — Programmatic Tool Calling.
  *
  * Allows the model to write JavaScript code that calls registered tools as
  * async functions, enabling multi-tool workflows in a single turn without
@@ -12,6 +12,15 @@
  * tool results stay out of the context window, saving tokens.
  *
  * Compatible with all providers (Ollama, OpenAI, Anthropic, Grok, etc.).
+ *
+ * Key exports:
+ *   - register: Tool registration (re-exported from registry)
+ *   - buildSandbox(tools, options): Create sandboxed context with tool functions
+ *   - execute: Main tool execution entry point
+ *
+ * Dependencies: node:vm, ./registry.js, ../logger.js
+ * Depended on by: src/agent.js, src/index.js, src/providers/anthropic.js,
+ *                  src/tools/registry.js, test/unit/code-execution.test.js
  */
 
 import vm from "node:vm";

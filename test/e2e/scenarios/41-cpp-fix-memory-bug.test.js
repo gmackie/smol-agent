@@ -1,3 +1,13 @@
+/**
+ * E2E test: Fix C++ memory leak/buffer overflow.
+ *
+ * Scenario: Agent is given C++ code with multiple memory bugs:
+ * - Buffer overflow (off-by-one error in loop bounds)
+ * - Memory leak (missing delete for results array)
+ * Agent must identify and fix these issues.
+ *
+ * Dependencies: ../config.js
+ */
 import {
   createTestAgent, runWithTimeout, collectEvents,
   scoreResult, check, seedFile, readResult, cleanup,

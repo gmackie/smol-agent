@@ -1,5 +1,5 @@
 /**
- * Cross-Agent Communication Protocol — Inbox / Letter Model
+ * Cross-Agent Communication Protocol — Inbox / Letter Model.
  *
  * Agents communicate by dropping markdown "letters" into each other's inboxes.
  * A watcher process monitors the inbox and kicks off the agent when a new letter arrives.
@@ -11,13 +11,18 @@
  *   .smol-agent/outbox/
  *     <id>.letter.md        ← copies of letters we sent (for tracking)
  *
- * Lifecycle:
- *   1. Agent A writes a letter to Agent B's inbox
- *   2. Agent B's watcher detects the new file
- *   3. Watcher spawns smol-agent to process the letter
- *   4. smol-agent reads the letter, does the work, writes a response to its own inbox
- *   5. smol-agent also writes a copy of the response to Agent A's inbox as a "reply"
- *   6. Agent A reads the reply and continues
+ * Key exports:
+ *   - sendLetter(to, title, body, options): Send a letter to another agent
+ *   - watchForResponses(cwd, callback): Watch for incoming letters
+ *   - clearStaleInbox(cwd): Clean up old inbox files
+ *   - listAgents(): List all registered agents (wraps agent-registry)
+ *   - findAgentForTask(task): Find best agent for a task
+ *   - replyToLetter(letterId, changes, verification): Respond to a letter
+ *
+ * Dependencies: node:fs, node:path, node:crypto, node:child_process, node:readline,
+ *               ./logger.js, node:os
+ * Depended on by: src/agent.js, src/constants.js, src/context.js, src/index.js,
+ *                 src/tools/cross_agent.js, src/ui/App.js, test/unit/cross-agent*.test.js
  */
 
 import fs from "node:fs";

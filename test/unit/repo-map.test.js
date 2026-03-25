@@ -1,3 +1,15 @@
+/**
+ * Unit tests for repo-map module.
+ *
+ * Tests repository map generation and symbol extraction:
+ * - buildRepoMap: Building compact repo overview
+ * - clearRepoMapCache: Clearing cached maps
+ * - computePageRank: Computing file importance scores
+ * - Symbol extraction for JS/TS/Python/Go/Rust/Java/Ruby
+ *
+ * Dependencies: @jest/globals, node:fs, node:path, node:os, node:url,
+ *               ../../src/repo-map.js, ./core.js (tree-sitter availability check)
+ */
 import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import fs from "node:fs";
 import path from "node:path";

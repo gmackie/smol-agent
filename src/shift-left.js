@@ -1,13 +1,8 @@
-import { exec } from "node:child_process";
-import fs from "node:fs";
-import path from "node:path";
-import { logger } from "./logger.js";
-
 /**
  * Shift-left feedback — inspired by Stripe's Minions.
  *
  * After file modifications, automatically run fast linting/validation to catch
- * errors before the model proceeds.  This "shifts feedback left" — surfacing
+ * errors before the model proceeds. This "shifts feedback left" — surfacing
  * issues in seconds rather than waiting for a full test run.
  *
  * Design:
@@ -15,7 +10,21 @@ import { logger } from "./logger.js";
  *   - Runs linters with a short timeout (10s) — fast feedback only
  *   - Returns structured results the agent can act on
  *   - Capped at MAX_LINT_ROUNDS per agent run to avoid infinite fix loops
+ *
+ * Also includes tree-sitter syntax checking for JS/TS/Python/Go/Rust/Java/Ruby.
+ *
+ * Key exports:
+ *   - detectLintCommands(cwd): Detect available lint/check commands
+ *   - runShiftLeft(cwd, filePaths): Run linters on modified files
+ *   - runTSLint(cwd, filePaths): Run tree-sitter syntax check
+ *
+ * Dependencies: node:child_process, node:fs, node:path, ./logger.js
+ * Depended on by: src/agent.js, test/e2e/scenarios/47-shift-left-lint.test.js
  */
+import { exec } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { logger } from "./logger.js";
 
 const MAX_LINT_ROUNDS = 2; // Stripe caps at 2 CI rounds — we do the same for lint
 

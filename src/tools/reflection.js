@@ -9,15 +9,11 @@
  * The agent is expected to act on this report by writing or updating the
  * file-level documentation block at the top of each qualifying file.
  *
- * Dependencies:
- *   - ./registry.js (register)
- *   - ./file_documentation.js (analyzeFilesForDocumentation, getEditedFiles, clearEditedFiles)
+ * Key exports:
+ *   - Tool registration: reflect
  *
- * Depended on by:
- *   - src/agent.js (imports for tool self-registration)
- *   - src/ui/App.js (invoked via /reflect command)
- *
- * @file-doc
+ * Dependencies: ./registry.js, ./file_documentation.js
+ * Depended on by: src/agent.js, src/tools/file_documentation.js, src/ui/App.js
  */
 import { register } from "./registry.js";
 import { analyzeFilesForDocumentation, getEditedFiles, clearEditedFiles } from "./file_documentation.js";

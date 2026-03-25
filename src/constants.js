@@ -1,9 +1,21 @@
 /**
  * Centralized constants for smol-agent.
- * 
+ *
  * This file contains all magic numbers and configuration values
  * used throughout the codebase. Extracting them here makes it
  * easier to tune behavior and understand configuration.
+ *
+ * Categories of constants:
+ * - Agent configuration: MAX_ITERATIONS, DEFAULT_CONTEXT_SIZE, LARGE_MODEL_THRESHOLD
+ * - Context management: SUMMARIZE_THRESHOLD_PERCENT, PRUNE_THRESHOLD_PERCENT
+ * - Tool settings: MAX_TOOL_FAILURES, MAX_TOOL_RESULT_SIZE
+ * - Streaming: MAX_STREAM_RETRIES, STREAM_RETRY_DELAY_MS
+ * - LRU cache: TOOL_HISTORY_SIZE
+ *
+ * Dependencies: None (pure constants)
+ * Depended on by: src/agent.js, src/architect.js, src/context-manager.js,
+ *                 src/providers/ollama.js, src/providers/openai-compatible.js,
+ *                 src/repo-map.js, test/e2e/config.js
  */
 
 // ── Agent Configuration ─────────────────────────────────────────────────────

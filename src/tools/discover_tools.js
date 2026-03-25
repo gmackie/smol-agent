@@ -1,12 +1,28 @@
+/**
+ * Progressive Tool Discovery — Meta-tool for activating tool groups.
+ *
+ * This meta-tool lets the agent request additional tool groups at runtime,
+ * reducing context bloat by only loading tools when needed.
+ *
+ * Tool groups:
+ *   - plan: save_plan, load_plan_progress, get_current_plan, complete_plan_step, update_plan_status
+ *   - memory: remember, recall, memory_bank_read, memory_bank_write, memory_bank_init, save_context
+ *   - web: web_search, web_fetch
+ *   - multi_agent: delegate, send_letter, check_reply, read_inbox, read_outbox, reply_to_letter,
+ *                  list_agents, link_repos, set_snippet, find_agent_for_task
+ *
+ * Key exports:
+ *   - setActivateGroupCallback(cb): Set callback to activate groups on agent
+ *   - Tool registration: discover_tools
+ *
+ * Dependencies: ./registry.js, ../logger.js
+ * Depended on by: src/agent.js, src/lru-tool-cache.js,
+ *                  test/e2e/scenarios/53-progressive-discovery.test.js,
+ *                  test/e2e/scenarios/54-auto-discovery-context.test.js
+ */
 import { register, getToolGroups, getToolsForGroups } from "./registry.js";
 import { logger } from "../logger.js";
 
-// ── Progressive Tool Discovery ──────────────────────────────────────
-// This meta-tool lets the agent request additional tool groups at
-// runtime, reducing context bloat by only loading tools when needed.
-
-// The active groups set is managed by the Agent, but we need a
-// callback so the tool execution can mutate the agent's state.
 let _activateGroupCallback = null;
 
 /**

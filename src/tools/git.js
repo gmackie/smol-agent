@@ -1,3 +1,28 @@
+/**
+ * Git tool with safety restrictions.
+ *
+ * Provides git operations with guardrails:
+ *   - Blocks dangerous commands: push, filter-branch
+ *   - Blocks dangerous flags: --force, --force-with-lease, -D
+ *   - Validates destructive operations: reset --hard, checkout -- ., stash drop
+ *   - Auto-includes change summary in commit messages
+ *
+ * Security model: Allow safe read/write operations, block anything that could
+ * destroy uncommitted work or push to remote.
+ *
+ * Key exports:
+ *   - Tool registration: git
+ *
+ * Dependencies: node:child_process, ./registry.js
+ * Depended on by: src/agent.js, src/checkpoint.js, src/context.js, src/index.js,
+ *                 src/repo-map.js, src/tools/file_documentation.js, src/tools/file_tools.js,
+ *                 src/tools/list_files.js, src/tools/registry.js, src/tools/run_command.js,
+ *                 src/ui/App.js, src/ui/diff.js, test/e2e/runner.js,
+ *                 test/e2e/scenarios/47-shift-left-lint.test.js,
+ *                 test/e2e/scenarios/55-git-safety.test.js,
+ *                 test/unit/agent-registry.test.js, test/unit/checkpoint.test.js,
+ *                 test/unit/context.test.js, test/unit/cross-agent-security-integration.test.js
+ */
 import { execFileSync } from "node:child_process";
 import { register } from "./registry.js";
 

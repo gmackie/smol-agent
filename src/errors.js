@@ -4,6 +4,24 @@
  * Centralises the context-overflow detection that was duplicated in
  * ollama.js and context-manager.js, and adds a general classifier
  * used by retry logic.
+ *
+ * Key exports:
+ *   - isContextOverflowError(err): Check if error indicates context limit hit
+ *   - classifyError(err): Classify error as transient/model_error/logic_error
+ *   - formatUserError(err): Convert error to user-friendly message
+ *
+ * Error types:
+ *   - transient: Network errors, rate limits — safe to retry
+ *   - context_overflow: Context window exceeded — need to prune/summarize
+ *   - model_error: Model-related errors — may need different model
+ *   - logic_error: Unrecoverable errors in agent logic
+ *
+ * Dependencies: None (pure utility)
+ * Depended on by: src/agent.js, src/constants.js, src/context-manager.js, src/cross-agent.js,
+ *                 src/index.js, src/input-parser.js, src/logger.js, src/providers/anthropic.js,
+ *                 src/providers/base.js, src/providers/errors.js, src/providers/openai-compatible.js,
+ *                 src/shift-left.js, src/token-estimator.js, src/tools/registry.js, src/tools/sub_agent.js,
+ *                 src/tools/web_search.js, src/ts-lint.js, test/unit/errors.test.js
  */
 
 const OVERFLOW_PATTERNS = [

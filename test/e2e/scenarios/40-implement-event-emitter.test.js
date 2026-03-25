@@ -1,3 +1,12 @@
+/**
+ * E2E test: Implement EventEmitter class from tests.
+ *
+ * Scenario: Agent is given a test suite for an EventEmitter class
+ * and must implement the class to pass all tests. Tests cover on(),
+ * emit(), off(), once(), and edge cases.
+ *
+ * Dependencies: ../config.js
+ */
 import {
   createTestAgent, runWithTimeout, collectEvents,
   scoreResult, check, seedFile, readResult, fileExists, cleanup,

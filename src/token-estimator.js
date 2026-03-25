@@ -1,12 +1,25 @@
 /**
  * Accurate token estimation using tiktoken.
- * 
+ *
  * Uses the cl100k_base encoding which works well for:
  * - GPT-4 / GPT-4o
  * - GPT-3.5-turbo
  * - Most modern LLMs (Llama, Qwen, Mistral use similar tokenizers)
- * 
+ *
  * Falls back to character-based estimation if tiktoken fails to load.
+ *
+ * Key exports:
+ *   - estimateTokens(text): Count tokens in text
+ *   - estimateMessageTokens(message): Count tokens in a chat message
+ *   - estimateTotalTokens(messages): Count total tokens in conversation
+ *   - getTokenBreakdown(messages): Get detailed token breakdown
+ *   - isTiktokenAvailable(): Check if tiktoken loaded successfully
+ *   - countTokens(text): Alias for estimateTokens
+ *   - ensureInitialized(): Wait for tiktoken to finish loading
+ *
+ * Dependencies: ./logger.js, tiktoken (optional)
+ * Depended on by: src/agent.js, src/context-manager.js, src/index.js,
+ *                  test/unit/token-estimator.test.js
  */
 
 import { logger } from './logger.js';

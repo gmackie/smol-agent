@@ -1,10 +1,34 @@
 #!/usr/bin/env node
 /**
  * CLI entry point for smol-agent.
- * 
+ *
  * Parses command-line arguments, initializes the LLM provider,
  * creates the Agent instance, and renders the terminal UI.
- * 
+ *
+ * CLI Options:
+ *   -m, --model <name>       Model to use (default depends on provider)
+ *   -p, --provider <name>    LLM provider: ollama, openai, anthropic, grok, groq, gemini
+ *   -H, --host <url>         Provider host/base URL
+ *   --api-key <key>          API key for cloud providers
+ *   -d, --directory <path>   Working directory and jail boundary
+ *   --auto-approve           Skip approval prompts (alias: --yolo)
+ *   -s, --session <id>       Resume saved session
+ *   -c, --continue           Resume most recent session
+ *   --list-sessions          List all saved sessions
+ *   --acp                    Run as ACP server over stdio
+ *
+ * Dependencies: ./agent.js, ./ui/App.js, node:path, node:fs, node:os,
+ *               ./settings.js, ./sessions.js, ./token-estimator.js,
+ *               node:child_process, ./acp-server.js, ./cross-agent.js
+ * Depended on by: jest.config.js, scripts/update-benchmark-readme.js
+ *                  src/agent.js (indirect - agent registry), src/checkpoint.js,
+ *                  src/context-manager.js, src/cross-agent.js, src/ollama.js,
+ *                  src/providers/openai-compatible.js, src/repo-map.js, src/skills.js,
+ *                  src/token-estimator.js, src/tools/code_execution.js,
+ *                  src/tools/file_tools.js, src/tools/git.js, src/tools/plan_tools.js,
+ *                  src/ui/App.js, src/ui/diff.js, test/e2e/compare-results.js,
+ *                  test/e2e/runner.js, test/unit/*.test.js (extensive)
+ *
  * @module index
  */
 

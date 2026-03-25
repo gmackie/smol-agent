@@ -5,6 +5,13 @@
  * repo paths to agent metadata. Agents self-register on startup so other
  * agents can discover and communicate with them.
  *
+ * Key features:
+ * - mkdir-based file locking for concurrent access safety
+ * - Stale lock detection (PID check + age-based fallback)
+ * - Atomic saves via temp file + rename
+ * - Auto-registration on first startup
+ * - Relationship tracking between repos (depends-on, serves, consumes, related)
+ *
  * Registry structure:
  *   {
  *     "agents": {
@@ -22,6 +29,10 @@
  *       }
  *     }
  *   }
+ *
+ * Dependencies: node:fs, node:path, node:os, ./logger.js
+ * Depended on by: src/agent.js, src/context.js, src/tools/cross_agent.js, src/ui/App.js,
+ *                 test/unit/agent-registry.test.js, test/unit/cross-agent-*.test.js
  */
 
 import fs from "node:fs";

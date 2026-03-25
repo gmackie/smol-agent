@@ -5,7 +5,23 @@
  * nodes in the AST. This provides language-agnostic syntax checking without
  * needing language-specific linters installed.
  *
- * Returns a list of syntax errors with line numbers and context.
+ * Supported languages:
+ *   - JavaScript / JSX / MJS / CJS
+ *   - TypeScript / TSX
+ *   - Python
+ *   - Go
+ *   - Rust
+ *   - Java
+ *   - Ruby
+ *
+ * Key exports:
+ *   - lintFile(filePath): Check file for syntax errors
+ *   - lintFileFormatted(filePath): Check and return formatted error string
+ *
+ * Dependencies: node:module, node:fs, node:path, ./logger.js, tree-sitter,
+ *               tree-sitter-javascript, tree-sitter-typescript, tree-sitter-python,
+ *               tree-sitter-go, tree-sitter-rust, tree-sitter-java, tree-sitter-ruby
+ * Depended on by: src/tools/file_tools.js, test/unit/ts-lint.test.js
  */
 
 import { createRequire } from "node:module";

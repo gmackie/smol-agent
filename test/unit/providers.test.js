@@ -1,9 +1,17 @@
 /**
  * Unit tests for the provider factory and provider implementations.
+ *
  * Covers createProvider() preset/custom-URL handling and tool-call
- * normalization edge cases.
+ * normalization edge cases:
+ * - createProvider: Factory function for different providers
+ * - listProviders: Listing available provider presets
+ * - getDefaultModel: Getting default model for provider
+ * - Provider-specific tool call normalization
+ *
+ * Dependencies: @jest/globals, ../../src/providers/index.js,
+ *               ../../src/providers/ollama.js, ../../src/providers/openai-compatible.js,
+ *               ../../src/providers/anthropic.js
  */
-
 import { describe, test, expect, jest, beforeEach, afterEach } from "@jest/globals";
 import { createProvider, listProviders, getDefaultModel } from "../../src/providers/index.js";
 import { OllamaProvider } from "../../src/providers/ollama.js";

@@ -1,8 +1,16 @@
 /**
- * Unit tests for context module
- * Tests project context gathering
+ * Unit tests for context module.
+ *
+ * Tests project context gathering:
+ * - gatherContext: Building context for system prompt
+ * - Project type detection (Node.js, Python, etc.)
+ * - AGENT.md parsing and inclusion
+ * - .cursorrules/CLAUDE.md rule loading
+ * - Memory bank integration
+ *
+ * Dependencies: @jest/globals, ../test-utils.js, node:fs, node:path,
+ *               ../../src/context.js (mocked repo-map)
  */
-
 import { describe, test, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import { createTempDir, cleanupTempDir, createTestFile } from '../test-utils.js';
 import fs from 'node:fs';

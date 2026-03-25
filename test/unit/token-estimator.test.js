@@ -1,8 +1,15 @@
 /**
- * Unit tests for token-estimator module
- * Tests token counting for messages and text
+ * Unit tests for token-estimator module.
+ *
+ * Tests token counting for messages and text:
+ * - estimateTokens: Counting tokens in text
+ * - estimateMessageTokens: Counting tokens in chat messages
+ * - estimateTotalTokens: Total tokens in conversation
+ * - getTokenBreakdown: Detailed breakdown by message type
+ * - isTiktokenAvailable: Checking if tiktoken loaded successfully
+ *
+ * Dependencies: @jest/globals, ../../src/token-estimator.js
  */
-
 import { describe, test, expect, beforeAll } from '@jest/globals';
 import {
   estimateTokens,

@@ -1,3 +1,31 @@
+/**
+ * Project context gathering for system prompts.
+ *
+ * Collects lightweight context about the working directory for injection
+ * into the agent's system prompt. Deliberately minimal — the agent has
+ * tools (read_file, list_files, grep) to explore deeper on demand.
+ *
+ * Context includes:
+ *   - Working directory path
+ *   - Project type detection (Node.js, Python, etc.)
+ *   - Repository map with key symbols (tree-sitter based)
+ *   - Git branch and uncommitted changes
+ *   - AGENT.md project instructions
+ *   - Shared coding rules (.cursorrules, CLAUDE.md, etc.)
+ *   - Loaded skills from .smol-agent/skills/ and global skills directory
+ *   - Memory bank context (projectContext, techContext, progress, learnings)
+ *   - Related agents from global registry
+ *
+ * Key exports:
+ *   - gatherContext(cwd, contextSize): Main context builder function
+ *   - detectProjectType(cwd): Detect project type from manifest files
+ *
+ * Dependencies: node:fs/promises, node:path, node:child_process,
+ *               ./tools/memory.js, ./tools/context_docs.js, ./skills.js,
+ *               ./logger.js, ./repo-map.js, ./memory-bank.js, ./agent-registry.js
+ * Depended on by: src/acp-server.js, src/agent.js, src/architect.js, src/index.js,
+ *                 test/unit/context.test.js, test/e2e/scenarios/09-context-init.test.js
+ */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { execSync } from "node:child_process";

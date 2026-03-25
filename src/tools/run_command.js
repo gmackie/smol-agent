@@ -1,3 +1,28 @@
+/**
+ * Shell command execution tool with safety restrictions.
+ *
+ * Executes commands in the current working directory with a timeout.
+ * Implements defense-in-depth security:
+ *   - Approval system: User must approve potentially destructive commands
+ *   - Pattern blocking: FORBIDDEN_PATTERNS catch dangerous operations
+ *   - Path validation: cwd must resolve within jail directory
+ *
+ * Blocked patterns include:
+ *   - Remote code execution (curl | bash, wget | sh)
+ *   - System destruction (rm -rf /, mkfs, dd to /dev/)
+ *   - Privilege escalation (chmod 777 /, writing to /etc/, /root/)
+ *   - Git destructive operations (git push, git reset --hard, git clean)
+ *
+ * Key exports:
+ *   - Tool registration: run_command
+ *
+ * Dependencies: node:child_process, ./registry.js, ../path-utils.js
+ * Depended on by: src/acp-server.js, src/agent.js, src/tools/code_execution.js,
+ *                  src/tools/file_tools.js, src/tools/registry.js,
+ *                  test/e2e/scenarios/04-multi-step.test.js, test/e2e/scenarios/07-run-command.test.js,
+ *                  test/unit/loop-detection.test.js, test/unit/registry.test.js,
+ *                  test/unit/tool-call-parser.test.js
+ */
 import { exec } from "node:child_process";
 import { register } from "./registry.js";
 import { resolveJailedPath } from "../path-utils.js";

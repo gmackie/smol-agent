@@ -1,13 +1,28 @@
-import { logger } from './logger.js';
-
 /**
- * LRU (Least Recently Used) cache for tools.
+ * LRU (Least Recently Used) cache for tool activation.
  *
  * Tracks tool usage and evicts tools that haven't been used recently to free
  * up context space. Pinned tools (core/starter) are never evicted.
  *
  * Evicted tools remain registered and can be re-activated via discover_tools
  * or auto-discovery signals.
+ *
+ * Key exports:
+ *   - LRUToolCache class: Main cache implementation
+ *   - Methods: pin(), record(), getEvicted(), maybeEvict(), touch()
+ *
+ * Eviction strategy:
+ *   - Count-based: When maxTools limit reached, evict least recently used
+ *   - TTL-based: Optionally evict tools unused for longer than ttl ms
+ *   - Pinned tools always stay active
+ *
+ * Dependencies: ./logger.js
+ * Depended on by: src/agent.js, test/unit/lru-tool-cache.test.js
+ */
+import { logger } from './logger.js';
+
+/**
+ * LRU (Least Recently Used) cache for tool activation.
  */
 export class LRUToolCache {
   /**

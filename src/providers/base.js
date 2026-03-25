@@ -18,6 +18,17 @@
  *
  * Tool calls are always normalized to the shape:
  *   { function: { name: string, arguments: object } }
+ *
+ * Key exports:
+ *   - BaseLLMProvider class: Abstract base for all providers
+ *   - MAX_RETRIES: Default retry count (3)
+ *   - TokenBucket class: Rate limiting utility
+ *
+ * Dependencies: ../errors.js
+ * Depended on by: src/agent-registry.js, src/agent.js, src/architect.js, src/constants.js,
+ *                 src/context-manager.js, src/context-summarizer.js, src/context.js,
+ *                 src/providers/anthropic.js, src/providers/ollama.js, src/providers/openai-compatible.js,
+ *                 src/providers/index.js, src/tools/*.js (all tools), test/unit/*.test.js (extensive)
  */
 
 import { classifyError, isContextOverflowError } from "../errors.js";

@@ -1,3 +1,12 @@
+/**
+ * E2E test: Implement linked list from tests.
+ *
+ * Scenario: Agent is given a test suite for a LinkedList class and must
+ * implement the class to pass all tests. Tests cover append, prepend,
+ * find, delete, and edge cases like deleting from empty list.
+ *
+ * Dependencies: ../config.js
+ */
 import {
   createTestAgent, runWithTimeout, collectEvents,
   scoreResult, check, seedFile, readResult, fileExists, cleanup,

@@ -1,3 +1,12 @@
+/**
+ * E2E test: Add error handling to async function.
+ *
+ * Scenario: Agent must add proper error handling to an async
+ * Python function that fetches data from an external API.
+ * Tests graceful handling of network errors and timeouts.
+ *
+ * Dependencies: ../config.js
+ */
 import {
   createTestAgent, runWithTimeout, collectEvents,
   scoreResult, check, seedFile, readResult, cleanup,

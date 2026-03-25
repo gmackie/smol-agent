@@ -1,15 +1,16 @@
 /**
- * Integration test for the cross-agent communication security hardening.
+ * Integration test for cross-agent communication security hardening.
  *
  * Exercises the full letter lifecycle through the registry-gated path
  * WITHOUT spawning a subprocess, verifying that:
- *  - Only registered agents can send/receive letters
- *  - Relationship gating is enforced at the tool layer
- *  - Frontmatter injection is neutralized end-to-end
- *  - Atomic writes produce valid files
- *  - Replies to unregistered senders degrade gracefully
+ * - Only registered agents can send/receive letters
+ * - Relationship gating is enforced at the tool layer
+ * - Frontmatter injection is neutralized end-to-end
+ * - Atomic writes produce valid files
+ * - Replies to unregistered senders degrade gracefully
+ *
+ * Dependencies: @jest/globals, node:fs, node:path, node:os
  */
-
 import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import fs from "node:fs";
 import path from "node:path";

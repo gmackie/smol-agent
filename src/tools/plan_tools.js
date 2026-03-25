@@ -1,15 +1,30 @@
+/**
+ * Planning tools for structured task execution.
+ *
+ * Implements a two-phase workflow:
+ *   1. Planning phase: Agent creates a detailed markdown plan
+ *   2. Execution phase: Agent executes steps one at a time
+ *
+ * Tools:
+ *   - save_plan: Save a plan to markdown file
+ *   - load_plan_progress: Load the current plan and progress
+ *   - get_current_plan: Get the content of the active plan
+ *   - complete_plan_step: Mark a step as completed
+ *   - update_plan_status: Update plan status (in-progress, completed, paused, abandoned)
+ *
+ * Plan files are stored in .smol-agent/plans/ with progress tracked in
+ * .smol-agent/state/plan-progress.json
+ *
+ * Key exports:
+ *   - Tool registrations: save_plan, load_plan_progress, get_current_plan,
+ *                        complete_plan_step, update_plan_status
+ *
+ * Dependencies: ./registry.js, ./save_plan.js, node:fs/promises
+ * Depended on by: src/agent.js
+ */
 import { register } from "./registry.js";
 import { savePlan, savePlanProgress, loadPlanProgress, getCurrentPlan, updatePlanStatus } from "./save_plan.js";
 
-/**
- * Save a plan to a markdown file and track progress.
- * 
- * This tool is used during the pre-plan phase to save a detailed plan
- * that will be executed later in coding mode.
- * 
- * @param {string} description - A short description for the plan filename
- * @param {string} planContent - The full markdown content of the plan
- */
 async function execute({ description, planContent }, { cwd = process.cwd() } = {}) {
   if (!description || !planContent) {
     return {

@@ -1,3 +1,16 @@
+/**
+ * Unit tests for cross-agent tools (send_letter, read_inbox, etc.).
+ *
+ * Tests the tool layer of cross-agent communication:
+ * - send_letter: Sending letters to other agents
+ * - read_inbox: Reading incoming letters
+ * - read_outbox: Reading sent letters
+ * - reply_to_letter: Responding to letters
+ * - list_agents: Listing registered agents
+ * - find_agent_for_task: Finding agents by snippet match
+ *
+ * Dependencies: @jest/globals, node:fs, node:path, node:os
+ */
 import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import fs from "node:fs";
 import path from "node:path";

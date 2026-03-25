@@ -4,6 +4,19 @@
  * Wraps the Ollama npm client to implement the BaseLLMProvider interface.
  * This preserves all existing Ollama functionality (streaming, tool calls,
  * context calculation, model listing, web search/fetch).
+ *
+ * Key exports:
+ *   - OllamaProvider class: Main provider implementation
+ *   - DEFAULT_MODEL: Default model (qwen2.5-coder:32b or SMOL_AGENT_MODEL env)
+ *   - Methods: chatStream(), chatWithRetry(), listModels(), formatTools()
+ *
+ * Dependencies: ollama (npm), ./base.js, ../constants.js
+ * Depended on by: src/agent.js, src/architect.js, src/context-manager.js,
+ *                 src/context-summarizer.js, src/errors.js, src/index.js,
+ *                 src/ollama.js, src/providers/index.js, src/providers/openai-compatible.js,
+ *                 src/tools/registry.js, src/ui/App.js, test/e2e/llm-judge.js,
+ *                 test/e2e/runner.js, test/unit/errors.test.js, test/unit/providers.test.js,
+ *                 test/unit/registry.test.js, test/unit/vision-support.test.js
  */
 
 import { Ollama } from "ollama";

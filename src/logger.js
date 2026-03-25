@@ -1,3 +1,27 @@
+/**
+ * File-based logging utility for smol-agent.
+ *
+ * Writes structured logs to .smol-agent/state/agent.log with:
+ *   - Timestamp in ISO format
+ *   - Log level (debug, info, warn, error)
+ *   - Process ID for debugging
+ *
+ * Log level controlled by SMOL_AGENT_LOG_LEVEL env var (default: info).
+ *
+ * Key exports:
+ *   - logger: Main logger object with debug/info/warn/error methods
+ *   - setLogBaseDir(dir): Set log directory (call early with jail dir)
+ *
+ * Dependencies: node:fs, node:path, ./errors.js
+ * Depended on by: src/acp-server.js, src/agent-registry.js, src/agent.js,
+ *                 src/architect.js, src/checkpoint.js, src/context-manager.js,
+ *                 src/context-summarizer.js, src/context.js, src/cross-agent.js,
+ *                 src/input-parser.js, src/lru-tool-cache.js, src/memory-bank.js,
+ *                 src/prehydrate.js, src/repo-map.js, src/shift-left.js, src/skills.js,
+ *                 src/token-estimator.js, src/tools/code_execution.js, src/tools/cross_agent.js,
+ *                 src/tools/discover_tools.js, src/tools/registry.js, src/tools/sub_agent.js,
+ *                 src/ts-lint.js, src/ui/App.js, test/unit/logger.test.js
+ */
 import fs from 'node:fs';
 import path from 'node:path';
 import { classifyError } from './errors.js';

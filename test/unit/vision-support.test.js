@@ -1,7 +1,16 @@
 /**
- * Tests for provider vision support detection.
+ * Unit tests for provider vision support detection.
+ *
+ * Tests the supportsVision() method across providers:
+ * - BaseLLMProvider: Returns false by default
+ * - OllamaProvider: Detects vision models (llava, bakllava, moondream, etc.)
+ * - OpenAICompatibleProvider: Detects vision models by name pattern
+ * - AnthropicProvider: All Claude models support vision
+ *
+ * Dependencies: @jest/globals, ../../src/providers/ollama.js,
+ *               ../../src/providers/openai-compatible.js,
+ *               ../../src/providers/anthropic.js, ../../src/providers/base.js
  */
-
 import { describe, it, expect } from "@jest/globals";
 import { OllamaProvider } from "../../src/providers/ollama.js";
 import { OpenAICompatibleProvider } from "../../src/providers/openai-compatible.js";

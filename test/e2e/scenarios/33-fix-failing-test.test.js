@@ -1,3 +1,15 @@
+/**
+ * E2E test: Fix failing test suite.
+ *
+ * Scenario: A Calculator implementation with buggy modulo() method,
+ * and a test suite that fails due to the bug. Agent must:
+ * 1. Run the tests to see failures
+ * 2. Identify the bug in modulo()
+ * 3. Fix the implementation
+ * 4. Verify tests pass
+ *
+ * Dependencies: ../config.js, assert, ./calculator
+ */
 import {
   createTestAgent, runWithTimeout, collectEvents,
   scoreResult, check, seedFile, readResult, cleanup,

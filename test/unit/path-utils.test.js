@@ -1,8 +1,14 @@
 /**
- * Unit tests for path-utils module
- * Tests the jail boundary security logic
+ * Unit tests for path-utils module.
+ *
+ * Tests the jail boundary security logic:
+ * - resolveJailedPath: Resolving paths within jail
+ * - validateJailedPath: Validating paths don't escape jail
+ * - Security: Detecting traversal attacks (../, symlinks)
+ *
+ * Dependencies: @jest/globals, ../../src/path-utils.js, ../test-utils.js,
+ *               node:fs, node:path
  */
-
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
 import { resolveJailedPath, validateJailedPath } from '../../src/path-utils.js';
 import { createTempDir, cleanupTempDir, createTestFile } from '../test-utils.js';

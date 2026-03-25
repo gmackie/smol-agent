@@ -1,8 +1,13 @@
 /**
- * Unit tests for errors module
- * Tests error classification utilities
+ * Unit tests for errors module.
+ *
+ * Tests error classification utilities:
+ * - isContextOverflowError: Detecting context limit errors
+ * - classifyError: Categorizing errors as transient/model_error/logic_error
+ * - formatUserError: Converting errors to user-friendly messages
+ *
+ * Dependencies: @jest/globals, ../../src/errors.js
  */
-
 import { describe, test, expect } from '@jest/globals';
 import { isContextOverflowError, classifyError, formatUserError } from '../../src/errors.js';
 

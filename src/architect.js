@@ -11,6 +11,15 @@
  *
  * Can also be used standalone via the /architect command for
  * complex tasks where the user wants a plan before execution.
+ *
+ * Key exports:
+ *   - runArchitectPass(client, model, task, cwd): Main entry point
+ *   - ARCHITECT_SYSTEM_PROMPT: System prompt for architect mode
+ *
+ * Dependencies: ./ollama.js, ./tools/registry.js, ./tool-call-parser.js,
+ *               ./logger.js, ./constants.js
+ * Depended on by: src/agent.js, src/memory-bank.js, src/tools/memory.js,
+ *                 src/tools/reflection.js, src/ui/App.js, test/e2e/scenarios/12-sub-agent.test.js
  */
 
 import * as ollama from "./ollama.js";

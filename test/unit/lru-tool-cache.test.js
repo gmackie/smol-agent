@@ -1,7 +1,14 @@
 /**
  * Unit tests for LRU tool cache.
+ *
+ * Tests the tool eviction and tracking:
+ * - touch: Tracking tool usage
+ * - getActive: Getting currently active tools
+ * - maybeEvict: Evicting least recently used tools
+ * - Pinning core/starter tools (never evicted)
+ *
+ * Dependencies: @jest/globals, ../../src/lru-tool-cache.js
  */
-
 import { describe, test, expect, beforeEach } from '@jest/globals';
 import { LRUToolCache } from '../../src/lru-tool-cache.js';
 

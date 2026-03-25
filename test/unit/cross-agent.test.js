@@ -1,3 +1,15 @@
+/**
+ * Unit tests for cross-agent communication (letters, inboxes).
+ *
+ * Tests the core cross-agent functionality:
+ * - Letter format and parsing
+ * - Inbox/outbox directory management
+ * - Letter lifecycle (create, send, receive, reply)
+ * - Atomic file operations for reliability
+ * - Frontmatter parsing and security
+ *
+ * Dependencies: @jest/globals, node:fs, node:path, node:os
+ */
 import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
 import fs from "node:fs";
 import path from "node:path";

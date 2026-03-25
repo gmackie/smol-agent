@@ -1,21 +1,29 @@
+/**
+ * Pre-hydration — inspired by Stripe's Minions.
+ *
+ * Before the agent loop starts, deterministically scan the user message for
+ * file paths, URLs, and other references. Pre-load any that exist so the
+ * model has immediate context without burning a tool-call round-trip.
+ *
+ * Returns an array of { type, ref, content } objects that the agent can
+ * inject as an extra system/user message.
+ *
+ * Key exports:
+ *   - prehydrateRefs(message, cwd): Extract and load referenced files/URLs
+ *   - extractFileRefs(message): Extract file path references from text
+ *   - extractURLs(message): Extract URL references from text
+ *
+ * Dependencies: node:fs/promises, node:fs, node:path, ./logger.js
+ * Depended on by: src/agent.js (only consumer)
+ */
 import fs from "node:fs/promises";
 import { openSync, readSync, closeSync } from "node:fs";
 import path from "node:path";
 import { logger } from "./logger.js";
 
-/**
- * Pre-hydration — inspired by Stripe's Minions.
- *
- * Before the agent loop starts, deterministically scan the user message for
- * file paths, URLs, and other references.  Pre-load any that exist so the
- * model has immediate context without burning a tool-call round-trip.
- *
- * Returns an array of { type, ref, content } objects that the agent can
- * inject as an extra system/user message.
- */
-
 // Match things that look like file paths (with extensions or trailing /)
 const FILE_PATH_RE = /(?:^|\s|["'`(])([a-zA-Z0-9_./-]+\.[a-zA-Z0-9]{1,10})(?=[\s"'`),;:]|$)/g;
+// Match directory paths (trailing /)
 const DIR_PATH_RE = /(?:^|\s|["'`(])([a-zA-Z0-9_./-]+\/)(?=[\s"'`),;:]|$)/g;
 
 // Common non-file extensions to skip

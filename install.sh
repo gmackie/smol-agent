@@ -1,7 +1,20 @@
 #!/bin/bash
 #
-# smol-agent installer
-# Installs smol-agent as a global CLI tool
+# @file-doc
+# smol-agent Installer Script
+#
+# Installs smol-agent as a global CLI tool. Supports two installation modes:
+# - curl | sh: Downloads latest release from GitHub to XDG data directory
+# - In-repo: Links existing clone globally via npm link
+#
+# Features:
+# - XDG-compliant install locations (~/.local/share/smol-agent, ~/.config/smol-agent)
+# - Version detection via GitHub releases API
+# - Self-update support via saved install metadata
+# - Prerequisite checking (Node.js >= 18, npm, git, curl)
+#
+# Dependencies: node, npm, git, curl (checked at runtime)
+# Depended on by: src/index.js (self-update), README.md (install instructions)
 #
 # Usage:
 #   From GitHub (recommended):

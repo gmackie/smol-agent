@@ -19,6 +19,14 @@
  *   - Only copies files; does not modify .git/ in the main repo
  *   - Preserves untracked files in checkpoints
  *   - Warns before destructive rollback
+ *
+ * Key exports:
+ *   - createCheckpoint(cwd, message): Create a new checkpoint before agent run
+ *   - undoCheckpoint(cwd): Restore from last checkpoint (returns files changed)
+ *   - hasCheckpoint(cwd): Check if any checkpoint exists
+ *
+ * Dependencies: node:child_process, node:fs, node:path, ./logger.js
+ * Depended on by: src/agent.js, src/constants.js, src/ui/App.js, test/unit/checkpoint.test.js
  */
 
 import { execFileSync } from "node:child_process";
