@@ -32,9 +32,19 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { logger } from "./logger.js";
 import os from "node:os";
+import { createFilesystemMessageTransport } from "./runtime/message-transport.js";
 
 const INBOX_DIR = ".smol-agent/inbox";
 const OUTBOX_DIR = ".smol-agent/outbox";
+let messageTransport = createFilesystemMessageTransport();
+
+export function setMessageTransport(transport) {
+  messageTransport = transport || createFilesystemMessageTransport();
+}
+
+export function getMessageTransport() {
+  return messageTransport;
+}
 
 // ── Directory helpers ─────────────────────────────────────────────────
 
@@ -339,46 +349,11 @@ export function parseLetter(markdown) {
  * @returns {number} Number of letters cleared
  */
 export function clearStaleInbox(repoPath) {
-  const inboxDir = path.join(path.resolve(repoPath), INBOX_DIR);
-  if (!fs.existsSync(inboxDir)) return 0;
-
-  const clearedDir = path.join(inboxDir, "cleared");
-  fs.mkdirSync(clearedDir, { recursive: true });
-
-  const files = fs.readdirSync(inboxDir).filter(
-    (f) => f.endsWith(".letter.md"),
-  );
-
-  let count = 0;
-  for (const file of files) {
-    const filePath = path.join(inboxDir, file);
-    try {
-      const content = fs.readFileSync(filePath, "utf-8");
-      const letter = parseLetter(content);
-      if (letter.status === "pending") {
-        // Move to cleared directory
-        fs.renameSync(filePath, path.join(clearedDir, file));
-        count++;
-        logger.info(`Cleared stale letter: ${file}`);
-      }
-    } catch (err) {
-      // If we can't parse the letter, move it to cleared so it doesn't get
-      // stuck (fs.watch won't re-emit for files that already existed).
-      logger.warn(`Could not parse letter ${file}, moving to cleared: ${err.message}`);
-      try {
-        fs.renameSync(filePath, path.join(clearedDir, file));
-        count++;
-      } catch (moveErr) {
-        logger.warn(`Failed to move unparseable letter ${file}: ${moveErr.message}`);
-      }
-    }
+  const cleared = messageTransport.clearStaleInbox(repoPath);
+  if (cleared > 0) {
+    logger.info(`Cleared ${cleared} stale letter(s) from inbox on startup`);
   }
-
-  if (count > 0) {
-    logger.info(`Cleared ${count} stale letter(s) from inbox on startup`);
-  }
-  enforceInboxLimits(repoPath);
-  return count;
+  return cleared;
 }
 
 /**
@@ -481,17 +456,14 @@ export function sendLetter({
     context,
   });
 
-  // Drop the letter in the recipient's inbox
-  const inboxDir = ensureInbox(toResolved);
-  const letterPath = path.join(inboxDir, `${id}.letter.md`);
-  atomicWriteFileSync(letterPath, markdown);
-
-  // Keep a copy in our outbox for tracking
-  const outboxDir = ensureOutbox(fromResolved);
-  atomicWriteFileSync(path.join(outboxDir, `${id}.letter.md`), markdown);
+  const { letterPath } = messageTransport.sendLetter({
+    from: fromResolved,
+    to: toResolved,
+    markdown,
+    id,
+  });
 
   logger.info(`Letter sent: ${id} from ${fromResolved} → ${toResolved}`);
-  enforceInboxLimits(toResolved);
   return { id, letterPath };
 }
 
@@ -534,37 +506,28 @@ export function sendReply({
     notes,
   });
 
-  // Write response to our own inbox (for our records)
-  const localInbox = ensureInbox(fromResolved);
-  const localPath = path.join(localInbox, `${originalLetter.id}.response.md`);
-  atomicWriteFileSync(localPath, markdown);
-
-  // Deliver the reply to the original sender's inbox
-  let replyPath = localPath;
+  let canDeliverToSender = false;
   if (originalLetter.from && fs.existsSync(originalLetter.from)) {
     try {
       validateRegisteredAgentPath(originalLetter.from, "original sender");
-      const senderInbox = ensureInbox(originalLetter.from);
-      replyPath = path.join(senderInbox, `${originalLetter.id}.response.md`);
-      atomicWriteFileSync(replyPath, markdown);
-      logger.info(`Reply delivered to ${originalLetter.from}`);
+      canDeliverToSender = true;
     } catch {
       logger.warn(`Skipping reply delivery to unregistered sender: ${originalLetter.from}`);
     }
   }
 
-  // Mark the original letter as completed
-  const letterPath = path.join(
-    localInbox,
-    `${originalLetter.id}.letter.md`,
-  );
-  if (fs.existsSync(letterPath)) {
-    let content = fs.readFileSync(letterPath, "utf-8");
-    content = content.replace(/^status: .+$/m, `status: ${status}`);
-    atomicWriteFileSync(letterPath, content);
+  const result = messageTransport.sendReply({
+    repoPath: fromResolved,
+    originalLetter: { ...originalLetter, status },
+    markdown,
+    canDeliverToSender,
+  });
+
+  if (canDeliverToSender) {
+    logger.info(`Reply delivered to ${originalLetter.from}`);
   }
 
-  return { id, responsePath: replyPath };
+  return result;
 }
 
 /**
@@ -577,17 +540,10 @@ export function sendReply({
  * @returns {Array} Parsed letters
  */
 export function readInbox(repoPath, filter = {}) {
-  const dir = path.join(repoPath, INBOX_DIR);
-  if (!fs.existsSync(dir)) return [];
-
-  const files = fs.readdirSync(dir).filter(
-    (f) => f.endsWith(".letter.md") || f.endsWith(".response.md"),
-  );
-
-  let letters = files.map((f) => {
-    const content = fs.readFileSync(path.join(dir, f), "utf-8");
+  const entries = messageTransport.readInbox(repoPath);
+  let letters = entries.map(({ filename, content }) => {
     const parsed = parseLetter(content);
-    parsed._filename = f;
+    parsed._filename = filename;
     return parsed;
   });
 
@@ -605,18 +561,11 @@ export function readInbox(repoPath, filter = {}) {
  * Read all letters from a repo's outbox (sent letters).
  */
 export function readOutbox(repoPath) {
-  const dir = path.join(repoPath, OUTBOX_DIR);
-  if (!fs.existsSync(dir)) return [];
-
-  return fs
-    .readdirSync(dir)
-    .filter((f) => f.endsWith(".letter.md"))
-    .map((f) => {
-      const content = fs.readFileSync(path.join(dir, f), "utf-8");
-      const parsed = parseLetter(content);
-      parsed._filename = f;
-      return parsed;
-    });
+  return messageTransport.readOutbox(repoPath).map(({ filename, content }) => {
+    const parsed = parseLetter(content);
+    parsed._filename = filename;
+    return parsed;
+  });
 }
 
 /**
@@ -627,13 +576,9 @@ export function readOutbox(repoPath) {
  * @returns {object|null} Parsed response or null
  */
 export function checkForReply(repoPath, letterId) {
-  const responsePath = path.join(
-    repoPath,
-    INBOX_DIR,
-    `${letterId}.response.md`,
-  );
-  if (!fs.existsSync(responsePath)) return null;
-  return parseLetter(fs.readFileSync(responsePath, "utf-8"));
+  const content = messageTransport.checkForReply(repoPath, letterId);
+  if (!content) return null;
+  return parseLetter(content);
 }
 
 // ── Wait for reply ────────────────────────────────────────────────────
