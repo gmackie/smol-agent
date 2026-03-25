@@ -725,7 +725,7 @@ export function startApp(agent, initialPrompt, options = {}) {
       if (subCmd === "save") {
         const session = agent.getSession();
         if (!session) {
-          agent.startSession(arg || undefined);
+          await agent.startSession(arg || undefined);
         } else if (arg) {
           session.name = arg;
         }

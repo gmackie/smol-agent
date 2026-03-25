@@ -34,6 +34,7 @@ const config = {
   cwd: process.cwd(),
   signal: null,
   onProgress: null,
+  host: null,
 };
 
 /**
@@ -47,6 +48,7 @@ export function setSubAgentConfig(cfg) {
   if (cfg.cwd !== undefined) config.cwd = cfg.cwd;
   if (cfg.signal !== undefined) config.signal = cfg.signal;
   if (cfg.onProgress !== undefined) config.onProgress = cfg.onProgress;
+  if (cfg.host !== undefined) config.host = cfg.host;
 }
 
 const READ_ONLY_TOOLS = new Set(["read_file", "list_files", "grep"]);
@@ -83,8 +85,11 @@ async function runDelegatedTask({ task, context, cwd, llmProvider, maxTokens, si
   }
 
   const provider = llmProvider;
-  const readOnlyTools = registry
-    .getTools(true)
+  // Use host's tool provider if available, fall back to registry
+  const allTools = config.host
+    ? config.host.toolProvider.getTools(true)
+    : registry.getTools(true);
+  const readOnlyTools = allTools
     .filter((t) => READ_ONLY_TOOLS.has(t.function.name));
 
   const systemPrompt = `You are a focused research sub-agent. Explore the codebase and return a concise answer.
@@ -177,7 +182,9 @@ ${context ? `\nContext: ${context}` : ""}`;
 
         onProgress?.({ type: "tool_call", name, args });
 
-        const result = await registry.execute(name, args, { cwd });
+        const result = config.host
+          ? await config.host.toolProvider.execute(name, args, { cwd })
+          : await registry.execute(name, args, { cwd });
         const str = JSON.stringify(result);
         const truncated =
           str.length > MAX_TOOL_RESULT_SIZE

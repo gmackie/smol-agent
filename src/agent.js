@@ -305,12 +305,12 @@ export class Agent extends AgentRuntime {
    * @param {boolean} [options.coreToolsOnly] - Restrict to core tools
    * @param {boolean} [options.programmaticToolCalling] - Enable programmatic tool calling
    */
-  constructor({ host, model, provider, apiKey, llmProvider, contextSize, maxTokens, jailDirectory, coreToolsOnly, programmaticToolCalling, agentHost } = {}) {
+  constructor({ host, model, provider, apiKey, llmProvider, contextSize, maxTokens, jailDirectory, coreToolsOnly, programmaticToolCalling, agentHost, runtimeContext } = {}) {
     const resolvedJailDirectory = jailDirectory || process.cwd();
     super({ host: agentHost || createLocalHost({ jailDirectory: resolvedJailDirectory }) });
 
-    // Create or use the provided LLM provider
-    this.llmProvider = llmProvider || createProvider({ provider, model, host, apiKey, programmaticToolCalling });
+    // Create or use the provided LLM provider, passing runtimeContext for request headers
+    this.llmProvider = llmProvider || createProvider({ provider, model, host, apiKey, programmaticToolCalling, runtimeContext });
     this.model = this.llmProvider.model;
     this.contextSize = contextSize; // AGENT.md line limit only
     this.maxTokens = maxTokens || DEFAULT_MAX_TOKENS;
@@ -413,11 +413,12 @@ export class Agent extends AgentRuntime {
       this.contextManager.setLLMProvider(this.llmProvider);
     }
 
-    // Always configure sub-agent for delegation (share parent's provider)
+    // Always configure sub-agent for delegation (share parent's provider and host)
     setSubAgentConfig({
       llmProvider: this.llmProvider,
       maxTokens: this.maxTokens,
       cwd: this.jailDirectory,
+      host: this.host,
     });
 
     // Configure cross-agent progress reporting
@@ -579,9 +580,10 @@ export class Agent extends AgentRuntime {
    */
   _getCurrentTools() {
     if (!this._progressiveDiscovery) {
-      return registry.getTools(this.coreToolsOnly);
+      return this.host.toolProvider.getTools(this.coreToolsOnly);
     }
     // Get tools for active groups, plus any ungrouped tools (e.g. session tools)
+    // Progressive discovery stays on registry internally — host filters the final list
     const tools = registry.getToolsForGroups(this._activeToolGroups, /* includeUngrouped */ true);
     // Filter out LRU-evicted tools to save context space
     return this._lruCache.filterTools(tools);
@@ -629,6 +631,7 @@ export class Agent extends AgentRuntime {
       llmProvider: this.llmProvider,
       maxTokens: this.maxTokens,
       cwd: this.jailDirectory,
+      host: this.host,
     });
   }
 
@@ -873,6 +876,7 @@ export class Agent extends AgentRuntime {
           projectContext,
           signal: this.abortController.signal,
           onProgress: (event) => this.emit("architect_progress", event),
+          host: this.host,
         });
 
         if (plan && !plan.startsWith("(")) {
@@ -1143,7 +1147,7 @@ export class Agent extends AgentRuntime {
           this.running = false;
           this.abortController = null;
           const content = cleanedContent || "(no response)";
-          this.emit("response", { content });
+          this.emitRuntimeEvent("response", { content });
           this.emit("token_usage", this.getTokenInfo());
 
           // Auto-save session after each completed run
@@ -1198,7 +1202,7 @@ export class Agent extends AgentRuntime {
           this._loopNudges = 0; // Reset for next run
           const msg = "I appear to be stuck in a loop repeating the same actions. Let me stop here — could you rephrase your request or provide more details?";
           this.messages.push({ role: "assistant", content: msg });
-          this.emit("response", { content: msg });
+          this.emitRuntimeEvent("response", { content: msg });
           this.emit("token_usage", this.getTokenInfo());
           return msg;
         }
@@ -1227,14 +1231,14 @@ export class Agent extends AgentRuntime {
           const failures = this._toolFailures.get(name) || 0;
           if (failures >= MAX_TOOL_FAILURES) {
             const msg = `Tool "${name}" has failed ${failures} times consecutively. Try a different approach.`;
-            this.emit("tool_result", { name, result: { error: msg } });
+            this.emitRuntimeEvent("tool_result", { name, result: { error: msg } });
             return { error: msg };
           }
 
           // Touch the LRU cache so this tool stays active
           this._lruCache.touch(name);
 
-          let result = await registry.execute(name, args, { cwd: this.jailDirectory, eventEmitter: this });
+          let result = await this.host.toolProvider.execute(name, args, { cwd: this.jailDirectory, eventEmitter: this });
 
           // Track consecutive failures
           if (result?.error) {
@@ -1257,7 +1261,7 @@ export class Agent extends AgentRuntime {
           result = this.contextManager.truncateToolResult(result, usageRatio);
 
           // Emit with _display attached so the UI can render a diff
-          this.emit("tool_result", { name, result: display ? { ...result, _display: display } : result });
+          this.emitRuntimeEvent("tool_result", { name, result: display ? { ...result, _display: display } : result });
 
           return result;
         };
@@ -1280,7 +1284,7 @@ export class Agent extends AgentRuntime {
           for (const tc of uniqueToolCalls) {
             const name = tc.function.name;
             const args = tc.function.arguments;
-            this.emit("tool_call", { name, args });
+            this.emitRuntimeEvent("tool_call", { name, args });
 
             // Request approval for dangerous tools (respects per-category approvals)
             const toolCategory = registry.getToolCategory(name);
@@ -1297,7 +1301,7 @@ export class Agent extends AgentRuntime {
               }
               if (!decision.approved) {
                 const err = { error: "User denied this action. Try a different approach or ask the user for guidance." };
-                this.emit("tool_result", { name, result: err });
+                this.emitRuntimeEvent("tool_result", { name, result: err });
                 results.push(err);
                 continue;
               }
@@ -1309,7 +1313,7 @@ export class Agent extends AgentRuntime {
           // Parallel — no approval needed (all safe, or user approved all)
           results = await Promise.all(
             uniqueToolCalls.map(async (tc) => {
-              this.emit("tool_call", { name: tc.function.name, args: tc.function.arguments });
+              this.emitRuntimeEvent("tool_call", { name: tc.function.name, args: tc.function.arguments });
               return executeSingleTool(tc);
             }),
           );
@@ -1392,7 +1396,7 @@ export class Agent extends AgentRuntime {
         if (err.name === "AbortError" || err.message === "Operation cancelled") {
           this.running = false;
           this.abortController = null;
-          this.emit("response", { content: "(Operation cancelled)" });
+          this.emitRuntimeEvent("response", { content: "(Operation cancelled)" });
           return "(Operation cancelled)";
         }
 
@@ -1420,7 +1424,7 @@ export class Agent extends AgentRuntime {
           this.running = false;
           this.abortController = null;
           const msg = `(Context limit exceeded at ${beforeUsage.percentage}% — pruned ${result.pruned} messages, now at ${afterUsage.percentage}%. Please retry.)`;
-          this.emit("error", new Error(msg));
+          this.emitRuntimeEvent("error", { message: msg });
           return msg;
         }
 
@@ -1428,7 +1432,7 @@ export class Agent extends AgentRuntime {
         this.running = false;
         this.abortController = null;
         const userMsg = formatUserError(err, this.model, this.llmProvider?.name);
-        this.emit("error", new Error(userMsg));
+        this.emitRuntimeEvent("error", { message: userMsg });
         throw err;
       }
     }
@@ -1437,7 +1441,7 @@ export class Agent extends AgentRuntime {
     this.running = false;
     this.abortController = null;
     const msg = "(Agent reached maximum iteration limit)";
-    this.emit("response", { content: msg });
+    this.emitRuntimeEvent("response", { content: msg });
     return msg;
   }
 
@@ -1493,8 +1497,8 @@ export class Agent extends AgentRuntime {
    * Start a new session.
    * @param {string} [name] - Optional human-friendly name
    */
-  startSession(name) {
-    this._session = createSession(name);
+  async startSession(name) {
+    this._session = await this.host.sessionStore.create(name);
     logger.info(`Session started: ${this._session.id}${name ? ` (${name})` : ""}`);
     return this._session;
   }
@@ -1506,7 +1510,7 @@ export class Agent extends AgentRuntime {
    * @returns {boolean} True if session was loaded, false if not found
    */
   async resumeSession(sessionId) {
-    const data = await fetchSession(this.jailDirectory, sessionId);
+    const data = await this.host.sessionStore.load(sessionId);
     if (!data) return false;
 
     // Initialize system context first
@@ -1516,7 +1520,7 @@ export class Agent extends AgentRuntime {
     const restoredMessages = data.messages || [];
     this.messages.push(...restoredMessages);
 
-    // Restore session metadata (without messages)
+    // Restore session metadata (without messages), preserving runtimeContext
     this._session = {
       id: data.id,
       name: data.name,
@@ -1524,7 +1528,14 @@ export class Agent extends AgentRuntime {
       updatedAt: data.updatedAt,
       messageCount: data.messageCount,
       summary: data.summary,
+      runtimeContext: data.runtimeContext || {},
     };
+
+    // Re-inject runtimeContext headers into the provider if the session had them
+    if (data.runtimeContext && this.llmProvider?.defaultHeaders) {
+      const { buildRuntimeHeaders } = await import("./runtime/request-context.js");
+      Object.assign(this.llmProvider.defaultHeaders, buildRuntimeHeaders(data.runtimeContext));
+    }
 
     logger.info(`Session resumed: ${data.id} (${restoredMessages.length} messages)`);
     this.emit("session_resumed", { session: this._session, messageCount: restoredMessages.length });
@@ -1538,7 +1549,7 @@ export class Agent extends AgentRuntime {
   async saveSession() {
     if (!this._session) return null;
     try {
-      const saved = await persistSession(this.jailDirectory, this._session, this.messages);
+      const saved = await this.host.sessionStore.save(this._session, this.messages);
       // Update local session metadata
       this._session.updatedAt = saved.updatedAt;
       this._session.messageCount = saved.messageCount;
@@ -1641,7 +1652,7 @@ export class Agent extends AgentRuntime {
     } catch { /* proceed without context */ }
 
     // Rebuild tool schema block
-    const allTools = registry.getTools(this.coreToolsOnly);
+    const allTools = this.host.toolProvider.getTools(this.coreToolsOnly);
     const toolLines = allTools.map(t => {
       const fn = t.function;
       const params = fn.parameters?.properties || {};

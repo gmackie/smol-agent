@@ -72,6 +72,7 @@ export async function architectPass(client, model, task, options = {}) {
     projectContext = "",
     signal = null,
     onProgress = null,
+    host = null,
   } = options;
 
   const systemContent = projectContext
@@ -83,9 +84,11 @@ export async function architectPass(client, model, task, options = {}) {
     { role: "user", content: `Analyze the codebase and create an implementation plan for: ${task}` },
   ];
 
-  // Only expose read-only tools
-  const readOnlyTools = registry
-    .ollamaTools(true)
+  // Only expose read-only tools — use host if available, fall back to registry
+  const allTools = host
+    ? host.toolProvider.getTools(true)
+    : registry.getTools(true);
+  const readOnlyTools = allTools
     .filter((t) => READ_ONLY_TOOLS.has(t.function.name));
 
   onProgress?.({ type: "architect_start", task });
@@ -144,7 +147,9 @@ export async function architectPass(client, model, task, options = {}) {
 
       onProgress?.({ type: "architect_tool", name, args });
 
-      const result = await registry.execute(name, args, { cwd });
+      const result = host
+        ? await host.toolProvider.execute(name, args, { cwd })
+        : await registry.execute(name, args, { cwd });
       const str = JSON.stringify(result);
       // Truncate large results
       const truncated = str.length > 12000

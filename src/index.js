@@ -464,7 +464,7 @@ if (acpMode) {
 
   // Start a new session if not resuming (always track sessions)
   if (!resumedSession) {
-    agent.startSession(sessionName);
+    await agent.startSession(sessionName);
   }
 
   startApp(agent, promptText, { showCodeExec });
