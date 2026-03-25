@@ -1155,6 +1155,27 @@ export class Agent extends AgentRuntime {
             this.saveSession().catch(() => {});
           }
 
+          // Export trace for governed hosts (non-LocalHost with event logging)
+          if (this.host.getEventLog) {
+            const events = this.host.getEventLog();
+            if (events.length > 0) {
+              import("./runtime/trace-export.js").then(({ exportTrace }) => {
+                const ctx = this.host.runtimeContext?.tieredRouter;
+                exportTrace(events, {
+                  outputDir: this.jailDirectory,
+                  sessionId: this._session?.id || "nosession",
+                  protectionLevel: ctx?.protectionLevel,
+                  workflowId: ctx?.workflowId,
+                }).then((tracePath) => {
+                  if (tracePath) logger.info(`Trace exported: ${tracePath}`);
+                  this.host.clearEventLog?.();
+                }).catch((err) => {
+                  logger.debug(`Trace export failed (non-blocking): ${err.message}`);
+                });
+              }).catch(() => {});
+            }
+          }
+
           // ── Automatic reflection (5% chance per run) ──
           // Probabilistically trigger reflection to keep file documentation
           // up-to-date and build codebase understanding over time.

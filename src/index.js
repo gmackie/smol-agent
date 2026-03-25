@@ -42,6 +42,7 @@ import { listSessions, findSession } from "./sessions.js";
 import { cleanup as cleanupTiktoken } from "./token-estimator.js";
 import { execSync } from "node:child_process";
 import { createLocalHost } from "./runtime/local-host.js";
+import { createGenTrellisHost } from "./runtime/gentrellis-host.js";
 
 // XDG-compliant global config directory
 const XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
@@ -49,6 +50,42 @@ const GLOBAL_CONFIG_DIR = path.join(XDG_CONFIG_HOME, "smol-agent");
 
 // Free tiktoken WASM resources on exit
 process.on("exit", () => { cleanupTiktoken().catch(() => {}); });
+
+// ── Agent host resolution ──────────────────────────────────────────────
+
+/**
+ * Parse --agent-host URL and create the appropriate host adapter.
+ * Supports: gentrellis://host:port/workflow/<id>
+ * Falls back to LocalHost if not specified.
+ */
+function resolveAgentHost(agentHostUrl, jailDirectory) {
+  if (!agentHostUrl) {
+    return createLocalHost({ jailDirectory });
+  }
+
+  // Parse gentrellis:// URLs → http(s)://
+  // Format: gentrellis://host:port/workflow/<id>
+  const match = agentHostUrl.match(/^gentrellis:\/\/([^/]+)(\/workflow\/(\d+))?/);
+  if (match) {
+    const hostPort = match[1];
+    const workflowId = match[3] ? parseInt(match[3], 10) : undefined;
+    const protocol = hostPort.includes("localhost") || hostPort.includes("127.0.0.1") ? "http" : "https";
+    const baseUrl = `${protocol}://${hostPort}`;
+    const token = process.env.GENTRELLIS_API_KEY || undefined;
+
+    console.log(`Connecting to GenTrellis host: ${baseUrl}${workflowId ? ` (workflow ${workflowId})` : ""}`);
+
+    return createGenTrellisHost({
+      baseUrl,
+      workflowId,
+      token,
+    });
+  }
+
+  // Unknown protocol
+  console.error(`Error: Unknown agent host protocol in '${agentHostUrl}'. Supported: gentrellis://`);
+  process.exit(1);
+}
 
 // ── Self-update ────────────────────────────────────────────────────────
 
@@ -159,6 +196,7 @@ let watchInboxFlag = false;     // --watch-inbox to run inbox watcher
 let progressFd = undefined;    // --progress-fd <n> to write JSONL progress events
 let programmaticTools = undefined; // --programmatic-tools / --no-programmatic-tools
 let showCodeExec = false;       // --show-code-exec to show internal code_execution tool calls
+let agentHostUrl = undefined;   // --agent-host <url> for governed host (e.g. gentrellis://host:port/workflow/1)
 
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
@@ -207,6 +245,8 @@ for (let i = 0; i < args.length; i++) {
     programmaticTools = false;
   } else if (a === "--show-code-exec") {
     showCodeExec = true;
+  } else if (a === "--agent-host" && args[i + 1]) {
+    agentHostUrl = args[++i];
   } else if (a === "--self-update") {
     runSelfUpdate();
   } else if (a === "--help") {
@@ -242,6 +282,7 @@ Options:
       --approve-execute     Auto-approve shell command execution (but still prompt for writes)
       --programmatic-tools  Enable programmatic tool calling (Anthropic: server-side, others: client-side)
       --no-programmatic-tools  Disable programmatic tool calling
+      --agent-host <url>    Connect to a governed host (e.g. gentrellis://host:port/workflow/1)
       --acp                 Run as ACP (Agent Client Protocol) server over stdio
       --show-code-exec      Show internal tool calls made by code_execution tool
       --watch-inbox         Watch inbox for cross-agent letters and process them
@@ -363,6 +404,7 @@ if (acpMode) {
   // This is used by processLetter() to spawn child agents that can
   // reliably execute tools without the overhead/fragility of a TUI on
   // a non-TTY stdin.
+  const resolvedHost = resolveAgentHost(agentHostUrl, jailDirectory);
   const agent = new Agent({
     host,
     model,
@@ -371,7 +413,8 @@ if (acpMode) {
     jailDirectory,
     coreToolsOnly,
     programmaticToolCalling: programmaticTools,
-    agentHost: createLocalHost({ jailDirectory }),
+    agentHost: resolvedHost,
+    runtimeContext: resolvedHost.runtimeContext,
   });
 
   if (autoApprove) agent._approveAll = true;
@@ -413,6 +456,7 @@ if (acpMode) {
   }
 } else {
   // ── TUI mode ────────────────────────────────────────────────────────
+  const resolvedHost = resolveAgentHost(agentHostUrl, jailDirectory);
   const agent = new Agent({
     host,
     model,
@@ -421,7 +465,8 @@ if (acpMode) {
     jailDirectory,
     coreToolsOnly,
     programmaticToolCalling: programmaticTools,
-    agentHost: createLocalHost({ jailDirectory }),
+    agentHost: resolvedHost,
+    runtimeContext: resolvedHost.runtimeContext,
   });
 
   // Load persisted settings, CLI flags override
