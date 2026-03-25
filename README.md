@@ -22,6 +22,7 @@ smol-agent gives a local language model the tools it needs to read, write, and e
 - [Context Injection](#context-injection)
 - [Persistent Memory](#persistent-memory)
 - [Skills](#skills)
+- [Embeddable Runtime](#embeddable-runtime)
 - [Architecture](#architecture)
 - [Cross-Agent Communication](#cross-agent-communication)
 - [Advanced Features](#advanced-features)
@@ -558,6 +559,29 @@ Description: Fix linting errors in the codebase
 
 Find and fix all linting errors in the project. Run the linter first to identify issues, then fix each one systematically.
 ```
+
+## Embeddable Runtime
+
+`smol-agent` now separates the agent runtime from the terminal host.
+
+- Runtime
+  - owns the agent loop, provider interaction, context flow, and multi-agent runtime seams
+- Host
+  - owns session storage, message transport, tool catalog access, and event sinks
+
+The terminal app still uses the default local host adapter, so existing CLI and TUI behavior stay intact. The practical difference is that the same runtime can now be hosted by another system with custom session stores, transports, and governed tool surfaces.
+
+Key runtime files:
+
+- `src/runtime/agent-runtime.js`
+- `src/runtime/local-host.js`
+- `src/runtime/contracts.js`
+- `src/runtime/session-metadata.js`
+- `src/runtime/request-context.js`
+- `src/runtime/message-transport.js`
+- `src/runtime/multi-agent.js`
+
+See [docs/embedded-runtime.md](docs/embedded-runtime.md) for the host contract, default local adapter, and embedding direction.
 
 ## Architecture
 

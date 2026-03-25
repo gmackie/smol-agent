@@ -16,6 +16,14 @@ export const meta = { name: "multi-turn-stateful", timeout: config.timeouts.comp
 export async function run() {
   const { agent, tmpDir } = createTestAgent();
   const events = collectEvents(agent);
+  const hostContractIntact = !!(
+    agent.host &&
+    typeof agent.host.sessionStore?.create === "function" &&
+    typeof agent.host.sessionStore?.load === "function" &&
+    typeof agent.host.sessionStore?.save === "function" &&
+    typeof agent.host.messageTransport?.send === "function" &&
+    typeof agent.host.toolProvider?.execute === "function"
+  );
 
   try {
     // Turn 1: Create a module with initial functions
@@ -59,6 +67,7 @@ export async function run() {
     const multiTurn = msgCount > 10; // 3 turns × (user + assistant + tool calls)
 
     return scoreResult(meta.name, [
+      check("runtime host adapter is present", hostContractIntact, 1),
       check("utils.js created in turn 1", t1Exists && t1HasIsEmpty && t1HasFirst, 2),
       check("turn 2 added last and compact", t2HasLast && t2HasCompact, 2),
       check("turn 2 preserved existing functions", t2PreservedIsEmpty && t2PreservedFirst, 2),
@@ -66,6 +75,12 @@ export async function run() {
       check("ran tests with node", ranTests, 2),
       check("response references test results", allFourMentioned, 1),
       check("conversation continuity across 3 turns", multiTurn, 1, `${msgCount} messages`),
+      check(
+        "stream lifecycle stayed balanced across turns",
+        events.stream_starts > 0 && events.stream_starts === events.stream_ends,
+        1,
+        `${events.stream_starts}/${events.stream_ends}`,
+      ),
     ]);
   } finally {
     await cleanup(tmpDir);
