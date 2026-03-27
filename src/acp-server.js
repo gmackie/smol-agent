@@ -32,6 +32,7 @@ import { setAskHandler, getAskHandler } from "./tools/ask_user.js";
 import { loadSettings } from "./settings.js";
 import { logger } from "./logger.js";
 import { requiresApproval } from "./tools/registry.js";
+import { formatDiff, formatReplaceDiff, formatNewFileDiff } from "./ui/diff.js";
 
 const require = createRequire(import.meta.url);
 const { version: PACKAGE_VERSION } = require("../package.json");
@@ -366,6 +367,31 @@ class SmolACPAgent {
         ? `error: ${logResult.error.slice(0, 80)}`
         : JSON.stringify(logResult).slice(0, 100);
       logger.info(`[ACP] tool_result — ${callId}: ${name} → ${status} (${resultPreview})`);
+
+      // Generate a plain-text unified diff for edit tools, mirroring the TUI
+      if (result?._display) {
+        const d = result._display;
+        let diffLines = [];
+        const diffOpts = { plain: true };
+
+        if (d.type === "new") {
+          diffLines = formatNewFileDiff(d.newContent, d.filePath, diffOpts);
+        } else if (d.type === "overwrite") {
+          diffLines = formatDiff(d.oldContent, d.newContent, d.filePath, diffOpts);
+        } else if (d.type === "replace") {
+          diffLines = formatReplaceDiff(d.fileContent, d.oldText, d.newText, d.filePath, diffOpts);
+        }
+
+        if (diffLines.length > 0) {
+          safeSessionUpdate(conn, {
+            sessionId,
+            update: {
+              sessionUpdate: "agent_message_chunk",
+              content: { type: "text", text: diffLines.join("\n") + "\n" },
+            },
+          });
+        }
+      }
 
       safeSessionUpdate(conn, {
         sessionId,

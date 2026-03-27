@@ -23,8 +23,22 @@
  */
 import chalk from "chalk";
 
+/** Build a style helper — chalk for TUI, identity for plain text. */
+function _styles(plain) {
+  if (!plain) return { dim: chalk.dim, bold: chalk.bold, red: chalk.red, green: chalk.green, cyan: chalk.cyan };
+  const id = (s) => s;
+  return { dim: id, bold: id, red: id, green: id, cyan: id };
+}
+
+/** Build the gutter prefix — decorated for TUI, empty for plain. */
+function _prefix(plain, s) {
+  return plain ? "" : s;
+}
+
 export function formatDiff(oldText, newText, filePath, opts = {}) {
-  const { contextLines = 3, maxLines = 40 } = opts;
+  const { contextLines = 3, maxLines = 40, plain = false } = opts;
+  const s = _styles(plain);
+  const pfx = (str) => _prefix(plain, str);
 
   if (oldText === newText) return [];
 
@@ -34,14 +48,14 @@ export function formatDiff(oldText, newText, filePath, opts = {}) {
   // For very large files, bail out with a summary instead of computing a full diff
   if (oldLines.length * newLines.length > 2_000_000) {
     return [
-      chalk.dim(`    ⎿  diff too large (${oldLines.length} → ${newLines.length} lines)`),
+      s.dim(`${pfx("    ⎿  ")}diff too large (${oldLines.length} → ${newLines.length} lines)`),
     ];
   }
 
   const ops = computeEditScript(oldLines, newLines);
   if (!ops) {
     return [
-      chalk.dim(`    ⎿  diff too large to compute`),
+      s.dim(`${pfx("    ⎿  ")}diff too large to compute`),
     ];
   }
 
@@ -50,9 +64,9 @@ export function formatDiff(oldText, newText, filePath, opts = {}) {
 
   // Format output
   const lines = [];
-  lines.push(chalk.dim(`    ⎿  `) + chalk.bold(`diff ${filePath}`));
-  lines.push(chalk.dim(`    ⎿  `) + chalk.red(`--- a/${filePath}`));
-  lines.push(chalk.dim(`    ⎿  `) + chalk.green(`+++ b/${filePath}`));
+  lines.push(s.dim(pfx("    ⎿  ")) + s.bold(`diff ${filePath}`));
+  lines.push(s.dim(pfx("    ⎿  ")) + s.red(`--- a/${filePath}`));
+  lines.push(s.dim(pfx("    ⎿  ")) + s.green(`+++ b/${filePath}`));
 
   let outputCount = 3;
   let truncated = false;
@@ -65,7 +79,7 @@ export function formatDiff(oldText, newText, filePath, opts = {}) {
 
     // Hunk header
     const header = `@@ -${hunk.oldStart},${hunk.oldCount} +${hunk.newStart},${hunk.newCount} @@`;
-    lines.push(chalk.dim(`    ⎿  `) + chalk.cyan(header));
+    lines.push(s.dim(pfx("    ⎿  ")) + s.cyan(header));
     outputCount++;
 
     for (const op of hunk.ops) {
@@ -75,18 +89,18 @@ export function formatDiff(oldText, newText, filePath, opts = {}) {
       }
 
       if (op.type === "keep") {
-        lines.push(chalk.dim(`    ⎿  `) + chalk.dim(` ${op.line}`));
+        lines.push(s.dim(pfx("    ⎿  ")) + s.dim(` ${op.line}`));
       } else if (op.type === "del") {
-        lines.push(chalk.dim(`    ⎿  `) + chalk.red(`-${op.line}`));
+        lines.push(s.dim(pfx("    ⎿  ")) + s.red(`-${op.line}`));
       } else if (op.type === "add") {
-        lines.push(chalk.dim(`    ⎿  `) + chalk.green(`+${op.line}`));
+        lines.push(s.dim(pfx("    ⎿  ")) + s.green(`+${op.line}`));
       }
       outputCount++;
     }
   }
 
   if (truncated) {
-    lines.push(chalk.dim(`    ⎿  `) + chalk.dim(`... (diff truncated)`));
+    lines.push(s.dim(pfx("    ⎿  ")) + s.dim(`... (diff truncated)`));
   }
 
   return lines;
@@ -107,7 +121,9 @@ export function formatDiff(oldText, newText, filePath, opts = {}) {
  * @returns {string[]}
  */
 export function formatReplaceDiff(fileContent, oldText, newText, filePath, opts = {}) {
-  const { contextLines = 3, maxLines = 40 } = opts;
+  const { contextLines = 3, maxLines = 40, plain = false } = opts;
+  const s = _styles(plain);
+  const pfx = (str) => _prefix(plain, str);
 
   const fileLines = fileContent.split("\n");
   const oldLines = oldText.split("\n");
@@ -135,9 +151,9 @@ export function formatReplaceDiff(fileContent, oldText, newText, filePath, opts 
 
   // Build output
   const lines = [];
-  lines.push(chalk.dim(`    ⎿  `) + chalk.bold(`diff ${filePath}`));
-  lines.push(chalk.dim(`    ⎿  `) + chalk.red(`--- a/${filePath}`));
-  lines.push(chalk.dim(`    ⎿  `) + chalk.green(`+++ b/${filePath}`));
+  lines.push(s.dim(pfx("    ⎿  ")) + s.bold(`diff ${filePath}`));
+  lines.push(s.dim(pfx("    ⎿  ")) + s.red(`--- a/${filePath}`));
+  lines.push(s.dim(pfx("    ⎿  ")) + s.green(`+++ b/${filePath}`));
 
   const oldStart = Math.max(0, startLine - contextLines) + 1; // 1-based
   const oldCount = ctxBefore.length + oldLines.length + ctxAfter.length;
@@ -145,40 +161,40 @@ export function formatReplaceDiff(fileContent, oldText, newText, filePath, opts 
   const newStart = oldStart;
 
   const header = `@@ -${oldStart},${oldCount} +${newStart},${newCount} @@`;
-  lines.push(chalk.dim(`    ⎿  `) + chalk.cyan(header));
+  lines.push(s.dim(pfx("    ⎿  ")) + s.cyan(header));
 
   let outputCount = 4;
 
   // Context before
   for (const line of ctxBefore) {
     if (outputCount >= maxLines - 1) break;
-    lines.push(chalk.dim(`    ⎿  `) + chalk.dim(` ${line}`));
+    lines.push(s.dim(pfx("    ⎿  ")) + s.dim(` ${line}`));
     outputCount++;
   }
 
   // Removed lines
   for (const line of oldLines) {
     if (outputCount >= maxLines - 1) break;
-    lines.push(chalk.dim(`    ⎿  `) + chalk.red(`-${line}`));
+    lines.push(s.dim(pfx("    ⎿  ")) + s.red(`-${line}`));
     outputCount++;
   }
 
   // Added lines
   for (const line of newLines) {
     if (outputCount >= maxLines - 1) break;
-    lines.push(chalk.dim(`    ⎿  `) + chalk.green(`+${line}`));
+    lines.push(s.dim(pfx("    ⎿  ")) + s.green(`+${line}`));
     outputCount++;
   }
 
   // Context after
   for (const line of ctxAfter) {
     if (outputCount >= maxLines - 1) break;
-    lines.push(chalk.dim(`    ⎿  `) + chalk.dim(` ${line}`));
+    lines.push(s.dim(pfx("    ⎿  ")) + s.dim(` ${line}`));
     outputCount++;
   }
 
   if (outputCount >= maxLines - 1) {
-    lines.push(chalk.dim(`    ⎿  `) + chalk.dim(`... (diff truncated)`));
+    lines.push(s.dim(pfx("    ⎿  ")) + s.dim(`... (diff truncated)`));
   }
 
   return lines;
@@ -188,23 +204,25 @@ export function formatReplaceDiff(fileContent, oldText, newText, filePath, opts 
  * Format a "new file" diff — shows the first few lines as all additions.
  */
 export function formatNewFileDiff(content, filePath, opts = {}) {
-  const { maxLines = 20 } = opts;
+  const { maxLines = 20, plain = false } = opts;
+  const s = _styles(plain);
+  const pfx = (str) => _prefix(plain, str);
   const contentLines = content.split("\n");
   const lines = [];
 
-  lines.push(chalk.dim(`    ⎿  `) + chalk.bold(`diff ${filePath} (new file)`));
-  lines.push(chalk.dim(`    ⎿  `) + chalk.green(`+++ b/${filePath}`));
+  lines.push(s.dim(pfx("    ⎿  ")) + s.bold(`diff ${filePath} (new file)`));
+  lines.push(s.dim(pfx("    ⎿  ")) + s.green(`+++ b/${filePath}`));
 
   const header = `@@ -0,0 +1,${contentLines.length} @@`;
-  lines.push(chalk.dim(`    ⎿  `) + chalk.cyan(header));
+  lines.push(s.dim(pfx("    ⎿  ")) + s.cyan(header));
 
   let outputCount = 3;
   for (const line of contentLines) {
     if (outputCount >= maxLines - 1) {
-      lines.push(chalk.dim(`    ⎿  `) + chalk.dim(`... +${contentLines.length - outputCount + 3} more lines`));
+      lines.push(s.dim(pfx("    ⎿  ")) + s.dim(`... +${contentLines.length - outputCount + 3} more lines`));
       break;
     }
-    lines.push(chalk.dim(`    ⎿  `) + chalk.green(`+${line}`));
+    lines.push(s.dim(pfx("    ⎿  ")) + s.green(`+${line}`));
     outputCount++;
   }
 
