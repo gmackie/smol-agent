@@ -6,7 +6,7 @@
  *   - Input field with autocomplete for commands and file paths
  *   - Real-time progress display during agent runs
  *   - Ask/user interaction flow for questions
- *   - Slash commands: /clear, /undo, /reflect, /architect, /model, /checkpoint
+ *   - Slash commands: /clear, /undo, /reflect, /architect, /review, /model, /checkpoint
  *
  * Key components:
  *   - App class: Main TUI component (extends TUI)
@@ -577,6 +577,7 @@ export function startApp(agent, initialPrompt, options = {}) {
     { name: "sessions", description: "List saved sessions" },
     { name: "session", description: "Manage sessions (save/load/delete/rename)" },
     { name: "architect", description: "Enable architect mode (plan before edit)" },
+    { name: "review", description: "Review recent changes with actionable feedback" },
     { name: "undo", description: "Rollback changes from the last agent run" },
     { name: "checkpoints", description: "List available rollback checkpoints" },
     { name: "approve", description: "Auto-approve a tool category (write/execute/network/all)" },
@@ -1221,6 +1222,42 @@ Reflect on these logs and determine if there's a skill worth creating. Process a
       return;
     }
 
+    // /review — review recent changes with actionable feedback
+    if (trimmed === "/review" || trimmed.startsWith("/review ")) {
+      const scope = trimmed.slice("/review".length).trim();
+      chatView.addLog(chalk.dim("    ⎿  Reviewing recent changes..."));
+      chatView.addLog("");
+      busy = true;
+      statusText = "reviewing changes...";
+      tui.requestRender();
+      try {
+        const { reviewPass } = await import("../review.js");
+        const projectContext = agent.messages[0]?.content?.split("# Project context\n\n")[1] || "";
+        const review = await reviewPass(agent.client, agent.model, {
+          cwd: agent.jailDirectory || process.cwd(),
+          maxTokens: agent.maxTokens,
+          projectContext,
+          signal: agent.abortController?.signal,
+          onProgress: (event) => {
+            if (event.type === "review_tool") {
+              chatView.addLog(chalk.dim(`    ⎿  reading ${event.args?.path || event.name}...`));
+              tui.requestRender();
+            }
+          },
+          scope,
+        });
+        chatView.addLog("");
+        chatView.addLog(review);
+      } catch (err) {
+        chatView.addLog(chalk.red(` ✗ Review failed: ${err.message}`));
+      } finally {
+        busy = false;
+        statusText = "";
+        tui.requestRender();
+      }
+      return;
+    }
+
     // /architect — enable architect mode for the next prompt
     if (trimmed === "/architect" || trimmed.startsWith("/architect ")) {
       const task = trimmed.slice("/architect".length).trim();
@@ -1305,7 +1342,7 @@ Reflect on these logs and determine if there's a skill worth creating. Process a
         !trimmed.startsWith("/inspect") && !trimmed.startsWith("/reload-skills") && !trimmed.startsWith("/exit") &&
         !trimmed.startsWith("/quit") && !trimmed.startsWith("/reflect") && !trimmed.startsWith("/document") && !trimmed.startsWith("/skills") &&
         !trimmed.startsWith("/session") && !trimmed.startsWith("/sessions") &&
-        !trimmed.startsWith("/architect") && !trimmed.startsWith("/undo") && !trimmed.startsWith("/checkpoints") &&
+        !trimmed.startsWith("/architect") && !trimmed.startsWith("/review") && !trimmed.startsWith("/undo") && !trimmed.startsWith("/checkpoints") &&
         !trimmed.startsWith("/approve") && !trimmed.startsWith("/agents") && !trimmed.startsWith("/agent")) {
       const skillName = trimmed.slice(1).split(/\s+/)[0];
       
