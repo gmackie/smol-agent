@@ -37,6 +37,7 @@ import { OllamaProvider, DEFAULT_MODEL as OLLAMA_DEFAULT_MODEL } from "./ollama.
 import { OllamaAPIProvider } from "./ollama-api.js";
 import { OpenAICompatibleProvider } from "./openai-compatible.js";
 import { AnthropicProvider } from "./anthropic.js";
+import { CodexCLIProvider } from "./codex-cli.js";
 
 /** Known provider presets with their defaults. */
 const PROVIDER_PRESETS = {
@@ -99,6 +100,14 @@ const PROVIDER_PRESETS = {
     defaultModel: "claude-sonnet-4-20250514",
     envKey: "ANTHROPIC_API_KEY",
   },
+  codex: {
+    factory: (opts) => new CodexCLIProvider({
+      model: opts.model || "gpt-5.4",
+      cwd: opts.cwd || process.cwd(),
+    }),
+    defaultModel: "gpt-5.4",
+    envKey: null,
+  },
 };
 
 /**
@@ -109,6 +118,7 @@ const PROVIDER_PRESETS = {
  * @param {string} [options.model]     - Model name
  * @param {string} [options.host]      - Host URL (Ollama) or base URL
  * @param {string} [options.apiKey]    - API key
+ * @param {string} [options.cwd]       - Working directory for local providers
  * @param {boolean} [options.programmaticToolCalling] - Enable programmatic tool calling
  * @returns {import('./base.js').BaseLLMProvider}
  */
@@ -117,6 +127,7 @@ export function createProvider({
   model,
   host,
   apiKey,
+  cwd,
   programmaticToolCalling,
   runtimeContext,
   defaultHeaders,
@@ -133,6 +144,7 @@ export function createProvider({
       host,
       baseURL: host, // host doubles as baseURL for non-Ollama providers
       apiKey: key,
+      cwd,
       programmaticToolCalling,
       runtimeContext,
       defaultHeaders,

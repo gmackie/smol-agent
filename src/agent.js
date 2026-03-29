@@ -284,7 +284,17 @@ export class Agent extends AgentRuntime {
     super({ host: agentHost || createLocalHost({ jailDirectory: resolvedJailDirectory }) });
 
     // Create or use the provided LLM provider, passing runtimeContext for request headers
-    this.llmProvider = llmProvider || createProvider({ provider, model, host, apiKey, programmaticToolCalling, runtimeContext });
+    this.llmProvider =
+      llmProvider ||
+      createProvider({
+        provider,
+        model,
+        host,
+        apiKey,
+        cwd: resolvedJailDirectory,
+        programmaticToolCalling,
+        runtimeContext,
+      });
     this.model = this.llmProvider.model;
     this.contextSize = contextSize; // AGENT.md line limit only
     this.maxTokens = maxTokens || DEFAULT_MAX_TOKENS;
@@ -1070,11 +1080,14 @@ export class Agent extends AgentRuntime {
             const allowedNames = new Set(tools.map(t => t.function.name));
             toolCalls = toolCalls.filter(tc => allowedNames.has(tc.function.name));
             // Block dangerous tools invoked via text-parsed calls (higher injection risk)
-            const DANGEROUS_TOOLS = new Set(["run_command", "write_file"]);
-            const hadDangerous = toolCalls.some(tc => DANGEROUS_TOOLS.has(tc.function.name) && tc._textParsed);
-            if (hadDangerous) {
-              logger.warn("Blocked dangerous tool call from text-parsed content (potential prompt injection)");
-              toolCalls = toolCalls.filter(tc => !(DANGEROUS_TOOLS.has(tc.function.name) && tc._textParsed));
+            // Skip this check when _approveAll is set (trusted embedded agent mode)
+            if (!this._approveAll) {
+              const DANGEROUS_TOOLS = new Set(["run_command", "write_file"]);
+              const hadDangerous = toolCalls.some(tc => DANGEROUS_TOOLS.has(tc.function.name) && tc._textParsed);
+              if (hadDangerous) {
+                logger.warn("Blocked dangerous tool call from text-parsed content (potential prompt injection)");
+                toolCalls = toolCalls.filter(tc => !(DANGEROUS_TOOLS.has(tc.function.name) && tc._textParsed));
+              }
             }
           }
         }

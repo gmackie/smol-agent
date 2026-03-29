@@ -4,7 +4,7 @@
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen)](https://nodejs.org/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-A small coding agent that runs in your terminal, powered by [Ollama](https://ollama.com) for local LLM hosting.
+A small coding agent that runs in your terminal, powered by [Ollama](https://ollama.com) for local LLM hosting, with optional cloud and Codex CLI providers.
 
 smol-agent gives a local language model the tools it needs to read, write, and edit code, run shell commands, search across a codebase, and ask you for clarification when it gets stuck — all wrapped in a colorful [pi-tui](https://github.com/mariozechner/pi-tui) and chalk-based terminal UI.
 
@@ -95,7 +95,7 @@ This makes agent responses much easier to read and understand at a glance.
 ## Prerequisites
 
 - **Node.js** >= 20.0.0
-- **Ollama** running locally (default `http://127.0.0.1:11434`) **OR** API access to OpenAI, Anthropic, Grok, Groq, or Gemini
+- **Ollama** running locally (default `http://127.0.0.1:11434`) **OR** API access to OpenAI, Anthropic, Grok, Groq, or Gemini **OR** a local `codex` CLI install authenticated with `codex login`
 
 ### Setting up Ollama
 
@@ -191,6 +191,28 @@ To use Google's Gemini models:
    ```
 
 Default model: `gemini-2.5-pro`
+
+### Setting up Codex CLI
+
+To use Codex directly through the local Codex app-server:
+
+1. Install the `codex` CLI and make sure it is on your `PATH`
+2. Authenticate it:
+   ```bash
+   codex login
+   ```
+3. Run with the Codex provider:
+   ```bash
+   smol-agent -p codex "your prompt here"
+   ```
+
+Default model: `gpt-5.4`
+
+Notes:
+
+- This uses `codex app-server` under the hood, not the OpenAI-compatible HTTP API
+- Codex executes work directly inside your project directory, it is not routed through smol-agent's normal tool-calling loop
+- The provider starts Codex in the same working directory you pass with `-d, --directory`
 
 ### Custom OpenAI-Compatible Endpoints
 
@@ -310,7 +332,7 @@ smol-agent "add input validation to src/api.js"
 | Flag | Description |
 |------|-------------|
 | `-m, --model <name>` | Model to use (default depends on provider) |
-| `-p, --provider <name>` | LLM provider: `ollama`, `openai`, `anthropic`, `grok`, `groq`, `gemini` (default: `ollama`) |
+| `-p, --provider <name>` | LLM provider: `ollama`, `openai`, `anthropic`, `grok`, `groq`, `gemini`, `codex` (default: `ollama`) |
 | `-H, --host <url>` | Provider host/base URL (default: provider-specific) |
 | `--api-key <key>` | API key for cloud providers (or use env vars) |
 | `-d, --directory <path>` | Set working directory and jail boundary (default: cwd) |
@@ -457,7 +479,7 @@ console.log(`Found ${todos} TODOs`);
 - **Multi-tool workflows** — Call multiple tools in one turn
 - **Loops and logic** — Iterate over results, filter, aggregate
 - **Token efficient** — Only final `console.log()` output returns to the model (not intermediate tool results)
-- **Works with all providers** — Ollama, OpenAI, Anthropic, Grok, Groq, Gemini
+- **Works with all providers** — Ollama, OpenAI, Anthropic, Grok, Groq, Gemini, Codex
 - **2-minute timeout** — Long-running operations are capped
 
 ### Sandboxed Environment
@@ -586,10 +608,12 @@ See [docs/embedded-runtime.md](docs/embedded-runtime.md) for the host contract, 
 ## Architecture
 
 ```
-User prompt → Agent.run() → LLM Provider API → tool calls → execute tools → feed results back → repeat until text response
+User prompt → Agent.run() → LLM Provider API or Codex app-server → tool calls → execute tools → feed results back → repeat until text response
 ```
 
-The agent is an EventEmitter that drives a loop: send messages to the LLM provider, check for tool calls, execute them, push results back, and repeat (max 25 iterations). The pi-tui UI subscribes to events (`tool_call`, `tool_result`, `response`, `error`) to render progress.
+The agent is an EventEmitter that drives a loop: send messages to the configured provider, check for tool calls, execute them, push results back, and repeat (max 25 iterations). The pi-tui UI subscribes to events (`tool_call`, `tool_result`, `response`, `error`) to render progress.
+
+Most providers use smol-agent's normal tool-calling loop. The `codex` provider is different: it streams output from `codex app-server`, and Codex performs its own file and command execution directly in the working tree.
 
 ## Advanced Features
 
