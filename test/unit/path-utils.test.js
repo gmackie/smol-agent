@@ -28,18 +28,23 @@ describe('resolveJailedPath', () => {
 
   test('resolves simple relative paths', () => {
     const result = resolveJailedPath(tempDir, 'test.txt');
-    expect(result).toBe(path.join(tempDir, 'test.txt'));
+    expect(result).toBe(fs.realpathSync(tempDir) + path.sep + 'test.txt');
   });
 
   test('resolves nested relative paths', () => {
     const result = resolveJailedPath(tempDir, 'subdir/nested/file.txt');
-    expect(result).toBe(path.join(tempDir, 'subdir', 'nested', 'file.txt'));
+    expect(result).toBe(path.join(fs.realpathSync(tempDir), 'subdir', 'nested', 'file.txt'));
+  });
+
+  test('resolves non-existent nested paths inside the jail', () => {
+    const result = resolveJailedPath(tempDir, '.smol-agent/skills');
+    expect(result.endsWith(path.join('.smol-agent', 'skills'))).toBe(true);
   });
 
   test('handles absolute paths within jail', () => {
     const absolutePath = path.join(tempDir, 'file.txt');
     const result = resolveJailedPath(tempDir, absolutePath);
-    expect(result).toBe(absolutePath);
+    expect(result).toBe(path.join(fs.realpathSync(tempDir), 'file.txt'));
   });
 
   test('throws on path traversal with ..', () => {
@@ -116,7 +121,7 @@ describe('validateJailedPath', () => {
   test('validates existing files', () => {
     createTestFile(tempDir, 'exists.txt', 'content');
     const result = validateJailedPath(tempDir, 'exists.txt');
-    expect(result).toBe(path.join(tempDir, 'exists.txt'));
+    expect(result).toBe(path.join(fs.realpathSync(tempDir), 'exists.txt'));
   });
 
   test('throws for non-existent files', () => {
