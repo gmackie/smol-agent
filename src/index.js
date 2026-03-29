@@ -7,7 +7,7 @@
  *
  * CLI Options:
  *   -m, --model <name>       Model to use (default depends on provider)
- *   -p, --provider <name>    LLM provider: ollama, openai, anthropic, grok, groq, gemini
+ *   -p, --provider <name>    LLM provider: ollama, openai, anthropic, grok, groq, gemini, codex
  *   -H, --host <url>         Provider host/base URL
  *   --api-key <key>          API key for cloud providers
  *   -d, --directory <path>   Working directory and jail boundary
@@ -43,6 +43,7 @@ import { cleanup as cleanupTiktoken } from "./token-estimator.js";
 import { execSync } from "node:child_process";
 import { createLocalHost } from "./runtime/local-host.js";
 import { createGenTrellisHost } from "./runtime/gentrellis-host.js";
+import { isProjectCommand, runProjectCommand } from "./commands/project-commands.js";
 
 // XDG-compliant global config directory
 const XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
@@ -178,7 +179,7 @@ function runSelfUpdate() {
 const args = process.argv.slice(2);
 let host = undefined;
 let model = undefined;
-let provider = undefined;       // --provider <name> (ollama, openai, anthropic, grok)
+let provider = undefined;       // --provider <name> (ollama, openai, anthropic, grok, codex)
 let apiKey = undefined;         // --api-key <key>
 
 let promptText = undefined;
@@ -197,6 +198,8 @@ let progressFd = undefined;    // --progress-fd <n> to write JSONL progress even
 let programmaticTools = undefined; // --programmatic-tools / --no-programmatic-tools
 let showCodeExec = false;       // --show-code-exec to show internal code_execution tool calls
 let agentHostUrl = undefined;   // --agent-host <url> for governed host (e.g. gentrellis://host:port/workflow/1)
+let commandName = undefined;
+let commandArgs = [];
 
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
@@ -252,6 +255,10 @@ for (let i = 0; i < args.length; i++) {
   } else if (a === "--help") {
     printUsage();
     process.exit(0);
+  } else if (!a.startsWith("-") && !commandName && isProjectCommand(a)) {
+    commandName = a;
+    commandArgs = args.slice(i + 1);
+    break;
   } else if (!a.startsWith("-")) {
     promptText = args.slice(i).join(" ");
     break;
@@ -272,7 +279,7 @@ Usage:
 
 Options:
   -m, --model <name>        Model to use (default depends on provider)
-  -p, --provider <name>     LLM provider: ollama, openai, anthropic, grok (default: ollama)
+  -p, --provider <name>     LLM provider: ollama, openai, anthropic, grok, groq, gemini, codex (default: ollama)
   -H, --host <url>          Provider host/base URL (default: provider-specific)
       --api-key <key>       API key for cloud providers (or use env vars)
 
@@ -326,6 +333,25 @@ Examples:
 
 // All models use the same tools with progressive discovery
 const coreToolsOnly = false;
+
+async function runCliCommand() {
+  try {
+    const exitCode = await runProjectCommand({
+      commandName,
+      commandArgs,
+      cwd: jailDirectory,
+      io: console,
+    });
+    process.exit(exitCode);
+  } catch (err) {
+    console.error(err.message);
+    process.exit(1);
+  }
+}
+
+if (commandName) {
+  await runCliCommand();
+}
 
 // ── List sessions (non-interactive) ───────────────────────────────────
 if (listSessionsFlag) {

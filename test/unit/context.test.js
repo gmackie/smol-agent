@@ -106,6 +106,48 @@ describe('gatherContext', () => {
     expect(context).toContain('test-skill');
   });
 
+  test('includes qualified source-backed skills if configured', async () => {
+    const previousXdg = process.env.XDG_CONFIG_HOME;
+    const xdgDir = createTempDir('smol-xdg-');
+    process.env.XDG_CONFIG_HOME = xdgDir;
+
+    try {
+      createTestFile(
+        tempDir,
+        'smol-agent.json',
+        JSON.stringify({ sources: [{ alias: 'vercel' }] }, null, 2)
+      );
+      createTestFile(
+        tempDir,
+        '.smol-agent/sources.lock.json',
+        JSON.stringify({
+          lockfileVersion: 1,
+          sources: {
+            src_vercel: {
+              url: 'https://github.com/vercel-labs/agent-skills',
+              revision: 'abc123',
+            },
+          },
+        }, null, 2)
+      );
+      createTestFile(
+        xdgDir,
+        'smol-agent/sources/src_vercel/skills/web-design-guidelines/SKILL.md',
+        '---\nname: web-design-guidelines\ndescription: External source-backed skill\n---\nBody'
+      );
+
+      const context = await gatherContext(tempDir);
+      expect(context).toContain('vercel:web-design-guidelines');
+    } finally {
+      if (previousXdg === undefined) {
+        delete process.env.XDG_CONFIG_HOME;
+      } else {
+        process.env.XDG_CONFIG_HOME = previousXdg;
+      }
+      cleanupTempDir(xdgDir);
+    }
+  });
+
   test('respects contextSize limit', async () => {
     // Create AGENT.md with many lines
     const lines = Array(200).fill(0).map((_, i) => `Line ${i}: some content here`);

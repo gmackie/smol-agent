@@ -59,6 +59,7 @@ import { listModels } from "../ollama.js";
 import { logger, readRecentLogs } from "../logger.js";
 import { analyzeFilesForDocumentation, analyzeAllFilesForDocumentation, getEditedFiles } from "../tools/file_documentation.js";
 import { getSkillNames } from "../skills.js";
+import { runProjectInventoryQuery } from "../project-inventory.js";
 import {
   listSessions,
   findSession,
@@ -592,6 +593,10 @@ export function startApp(agent, initialPrompt, options = {}) {
     { name: "inspect", description: "Dump context to file" },
     { name: "reload-skills", description: "Reload skills from global and local directories" },
     { name: "skills", description: "List available skills" },
+    { name: "sources", description: "List configured external skill sources" },
+    { name: "artifacts", description: "List or search discovered skill artifacts" },
+    { name: "groups", description: "List configured local skill groups" },
+    { name: "agent-definitions", description: "List configured agent skill policies" },
     { name: "agents", description: "List registered agents and their relationships" },
     { name: "agent", description: "Manage agents (info/link/unlink/snippet/role/remove)" },
     { name: "document", description: "Run full codebase documentation pass on files >100 lines" },
@@ -1261,7 +1266,7 @@ Reflect on these logs and determine if there's a skill worth creating. Process a
       } finally {
         busy = false;
         statusText = "";
-        tui.requestRender();
+        tui.requestRender()
       }
       return;
     }
@@ -1298,6 +1303,78 @@ Reflect on these logs and determine if there's a skill worth creating. Process a
         busy = false;
         statusText = "";
         tui.requestRender();
+      }
+      return;
+    }
+
+    if (trimmed === "/sources" || trimmed === "/sources list") {
+      try {
+        const { lines } = await runProjectInventoryQuery({
+          commandName: "sources",
+          commandArgs: ["list"],
+          cwd: agent.jailDirectory || process.cwd(),
+        });
+        chatView.addLog(chalk.dim("    ⎿  Configured sources:"));
+        for (const line of lines) {
+          chatView.addLog(chalk.dim(`        ${line}`));
+        }
+      } catch (err) {
+        chatView.addLog(chalk.red(` ✗ Failed to list sources: ${err.message}`));
+      }
+      return;
+    }
+
+    if (trimmed === "/groups" || trimmed === "/groups list") {
+      try {
+        const { lines } = await runProjectInventoryQuery({
+          commandName: "groups",
+          commandArgs: ["list"],
+          cwd: agent.jailDirectory || process.cwd(),
+        });
+        chatView.addLog(chalk.dim("    ⎿  Configured groups:"));
+        for (const line of lines) {
+          chatView.addLog(chalk.dim(`        ${line}`));
+        }
+      } catch (err) {
+        chatView.addLog(chalk.red(` ✗ Failed to list groups: ${err.message}`));
+      }
+      return;
+    }
+
+    if (trimmed === "/agent-definitions" || trimmed === "/agent-definitions list") {
+      try {
+        const { lines } = await runProjectInventoryQuery({
+          commandName: "agent-definitions",
+          commandArgs: ["list"],
+          cwd: agent.jailDirectory || process.cwd(),
+        });
+        chatView.addLog(chalk.dim("    ⎿  Agent definitions:"));
+        for (const line of lines) {
+          chatView.addLog(chalk.dim(`        ${line}`));
+        }
+      } catch (err) {
+        chatView.addLog(chalk.red(` ✗ Failed to list agent definitions: ${err.message}`));
+      }
+      return;
+    }
+
+    if (trimmed === "/artifacts" || trimmed === "/artifacts list" || trimmed.startsWith("/artifacts search ")) {
+      try {
+        const inventoryCommandArgs = trimmed.startsWith("/artifacts search ")
+          ? ["search", trimmed.slice("/artifacts search ".length).trim()]
+          : ["list"];
+        const { lines } = await runProjectInventoryQuery({
+          commandName: "artifacts",
+          commandArgs: inventoryCommandArgs,
+          cwd: agent.jailDirectory || process.cwd(),
+        });
+        const heading = inventoryCommandArgs[0] === "search" ? "Matching artifacts:" : "Discovered artifacts:";
+        chatView.addLog(chalk.dim(`    ⎿  ${heading}`));
+        for (const line of lines) {
+          chatView.addLog(chalk.dim(`        ${line}`));
+        }
+      } catch (err) {
+        chatView.addLog(chalk.red(` ✗ Failed to list artifacts: ${err.message}`));
       }
       return;
     }
@@ -1385,6 +1462,8 @@ Reflect on these logs and determine if there's a skill worth creating. Process a
     if (trimmed.startsWith("/") && !trimmed.startsWith("/model") && !trimmed.startsWith("/clear") &&
         !trimmed.startsWith("/inspect") && !trimmed.startsWith("/reload-skills") && !trimmed.startsWith("/exit") &&
         !trimmed.startsWith("/quit") && !trimmed.startsWith("/reflect") && !trimmed.startsWith("/document") && !trimmed.startsWith("/skills") &&
+        !trimmed.startsWith("/sources") && !trimmed.startsWith("/artifacts") && !trimmed.startsWith("/groups") &&
+        !trimmed.startsWith("/agent-definitions") &&
         !trimmed.startsWith("/session") && !trimmed.startsWith("/sessions") &&
         !trimmed.startsWith("/architect") && !trimmed.startsWith("/review") && !trimmed.startsWith("/undo") && !trimmed.startsWith("/checkpoints") &&
         !trimmed.startsWith("/approve") && !trimmed.startsWith("/agents") && !trimmed.startsWith("/agent")) {

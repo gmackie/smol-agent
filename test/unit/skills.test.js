@@ -295,6 +295,165 @@ Legacy body`);
     // Standard format should win
     expect(skills[0].description).toBe('Standard format');
   });
+
+  test('loads skills from a configured cached source with qualified names', async () => {
+    const previousXdg = process.env.XDG_CONFIG_HOME;
+    const xdgDir = createTempDir('smol-xdg-');
+    process.env.XDG_CONFIG_HOME = xdgDir;
+
+    try {
+      fs.writeFileSync(
+        path.join(tempDir, 'smol-agent.json'),
+        JSON.stringify({
+          sources: [{ alias: 'vercel' }],
+        }, null, 2)
+      );
+
+      const lockDir = path.join(tempDir, '.smol-agent');
+      fs.mkdirSync(lockDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(lockDir, 'sources.lock.json'),
+        JSON.stringify({
+          lockfileVersion: 1,
+          sources: {
+            src_vercel: {
+              url: 'https://github.com/vercel-labs/agent-skills',
+              revision: 'abc123',
+            },
+          },
+        }, null, 2)
+      );
+
+      const cachedSkillDir = path.join(
+        xdgDir,
+        'smol-agent',
+        'sources',
+        'src_vercel',
+        'skills',
+        'web-design-guidelines'
+      );
+      fs.mkdirSync(cachedSkillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(cachedSkillDir, 'SKILL.md'),
+        `---
+name: web-design-guidelines
+description: External source-backed skill
+---
+Body`
+      );
+
+      const skills = await loadSkills(tempDir);
+      const externalSkill = skills.find((skill) => skill.name === 'vercel:web-design-guidelines');
+
+      expect(externalSkill).toBeTruthy();
+      expect(externalSkill.description).toBe('External source-backed skill');
+      expect(externalSkill.source).toBe('source');
+      expect(externalSkill.sourceId).toBe('src_vercel');
+      expect(externalSkill.qualifiedName).toBe('vercel:web-design-guidelines');
+    } finally {
+      if (previousXdg === undefined) {
+        delete process.env.XDG_CONFIG_HOME;
+      } else {
+        process.env.XDG_CONFIG_HOME = previousXdg;
+      }
+      cleanupTempDir(xdgDir);
+    }
+  });
+
+  test('loads skills from a configured git source declaratively', async () => {
+    const previousXdg = process.env.XDG_CONFIG_HOME;
+    const xdgDir = createTempDir('smol-xdg-');
+    process.env.XDG_CONFIG_HOME = xdgDir;
+
+    try {
+      const repoDir = path.join(tempDir, 'git-source');
+      const skillDir = path.join(repoDir, 'skills', 'declarative-skill');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, 'SKILL.md'),
+        `---
+name: declarative-skill
+description: Synced from a configured git source
+---
+Body`
+      );
+      const { execFileSync } = await import('node:child_process');
+      execFileSync('git', ['init'], { cwd: repoDir });
+      execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: repoDir });
+      execFileSync('git', ['config', 'user.name', 'Test User'], { cwd: repoDir });
+      execFileSync('git', ['add', '.'], { cwd: repoDir });
+      execFileSync('git', ['commit', '-m', 'Initial commit'], { cwd: repoDir });
+
+      fs.writeFileSync(
+        path.join(tempDir, 'smol-agent.json'),
+        JSON.stringify({
+          sourceCatalog: {
+            'local-repo': {
+              url: repoDir,
+              label: 'Local Repo',
+            },
+          },
+          sources: [{ alias: 'local-repo' }],
+        }, null, 2)
+      );
+
+      const skills = await loadSkills(tempDir);
+      const externalSkill = skills.find((skill) => skill.name === 'local-repo:declarative-skill');
+
+      expect(externalSkill).toBeTruthy();
+      expect(externalSkill.description).toBe('Synced from a configured git source');
+    } finally {
+      if (previousXdg === undefined) {
+        delete process.env.XDG_CONFIG_HOME;
+      } else {
+        process.env.XDG_CONFIG_HOME = previousXdg;
+      }
+      cleanupTempDir(xdgDir);
+    }
+  });
+
+  test('uses the derived source alias for skills from direct-url installs', async () => {
+    const previousXdg = process.env.XDG_CONFIG_HOME;
+    const xdgDir = createTempDir('smol-xdg-');
+    process.env.XDG_CONFIG_HOME = xdgDir;
+
+    try {
+      const repoDir = path.join(tempDir, 'pretty-source');
+      const skillDir = path.join(repoDir, 'skills', 'pretty-skill');
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, 'SKILL.md'),
+        `---
+name: pretty-skill
+description: Pretty direct source skill
+---
+Body`
+      );
+      const { execFileSync } = await import('node:child_process');
+      execFileSync('git', ['init'], { cwd: repoDir });
+      execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: repoDir });
+      execFileSync('git', ['config', 'user.name', 'Test User'], { cwd: repoDir });
+      execFileSync('git', ['add', '.'], { cwd: repoDir });
+      execFileSync('git', ['commit', '-m', 'Initial commit'], { cwd: repoDir });
+
+      fs.writeFileSync(
+        path.join(tempDir, 'smol-agent.json'),
+        JSON.stringify({
+          sources: [{ alias: 'pretty-source', url: repoDir }],
+        }, null, 2)
+      );
+
+      const skills = await loadSkills(tempDir);
+      expect(skills.some((skill) => skill.name === 'pretty-source:pretty-skill')).toBe(true);
+    } finally {
+      if (previousXdg === undefined) {
+        delete process.env.XDG_CONFIG_HOME;
+      } else {
+        process.env.XDG_CONFIG_HOME = previousXdg;
+      }
+      cleanupTempDir(xdgDir);
+    }
+  });
 });
 
 describe('loadSkillResource', () => {

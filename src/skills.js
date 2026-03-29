@@ -26,6 +26,11 @@ import path from "node:path";
 import os from "node:os";
 import { resolveJailedPath } from "./path-utils.js";
 import { logger } from "./logger.js";
+import { loadSourceConfig } from "./source-config.js";
+import { loadSourceLockfile } from "./source-lockfile.js";
+import { resolveSourceDefinition } from "./source-catalog.js";
+import { getSourceCacheRoot, syncConfiguredSources } from "./source-sync.js";
+import { filterSkillsForActiveAgent } from "./skill-policy.js";
 
 // Directory names for skills
 const SKILLS_DIR = ".smol-agent/skills";
@@ -286,6 +291,47 @@ async function loadSkillsFromDir(dirPath, source) {
   return Array.from(skillMap.values());
 }
 
+async function loadConfiguredSourceSkills(cwd) {
+  const config = await loadSourceConfig(cwd);
+  if (!Array.isArray(config.sources) || config.sources.length === 0) return [];
+
+  await syncConfiguredSources(cwd);
+  const lockfile = await loadSourceLockfile(cwd);
+  const sourceCacheRoot = getSourceCacheRoot();
+  const skills = [];
+
+  for (const sourceRef of config.sources) {
+    let resolved;
+    try {
+      resolved = resolveSourceDefinition(sourceRef, config);
+    } catch (err) {
+      logger.debug(`Could not resolve configured source: ${err.message}`);
+      continue;
+    }
+
+    if (!lockfile.sources[resolved.id]) continue;
+
+    const sourceSkillsPath = path.join(sourceCacheRoot, resolved.id, "skills");
+    const loaded = await loadSkillsFromDir(sourceSkillsPath, "source");
+
+    for (const skill of loaded) {
+      const localName = skill.name;
+      const qualifiedName = `${resolved.alias || resolved.id}:${localName}`;
+      skills.push({
+        ...skill,
+        name: qualifiedName,
+        localName,
+        qualifiedName,
+        sourceId: resolved.id,
+        sourceAlias: resolved.alias,
+        sourceUrl: resolved.url,
+      });
+    }
+  }
+
+  return skills;
+}
+
 /**
  * Load skills from both global (~/.config/smol-agent/skills) and local (.smol-agent/skills).
  * Global skills are loaded first, then local skills (local can shadow global by name).
@@ -298,17 +344,21 @@ export async function loadSkills(cwd) {
   // Then load local (project-specific) skills
   const localSkillsPath = resolveJailedPath(cwd, SKILLS_DIR);
   const localSkills = await loadSkillsFromDir(localSkillsPath, "local");
+  const sourceSkills = await loadConfiguredSourceSkills(cwd);
   
   // Merge: local skills shadow global skills with the same name
   const skillMap = new Map();
   for (const skill of globalSkills) {
     skillMap.set(skill.name, skill);
   }
+  for (const skill of sourceSkills) {
+    skillMap.set(skill.name, skill);
+  }
   for (const skill of localSkills) {
     skillMap.set(skill.name, skill); // local overrides global
   }
   
-  return Array.from(skillMap.values());
+  return filterSkillsForActiveAgent(cwd, Array.from(skillMap.values()));
 }
 
 /**
