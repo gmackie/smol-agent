@@ -1,5 +1,5 @@
 /**
- * Simplify Mode — analyzes current changes and suggests simplifications.
+ * @file-doc Simplify Mode — analyzes current changes and suggests simplifications.
  *
  * Examines git diffs and uncommitted changes to identify opportunities for
  * code simplification, then produces a structured analysis with actionable
@@ -8,9 +8,10 @@
  * Key exports:
  *   - simplifyPass(client, model, options): Main entry point
  *   - SIMPLIFY_SYSTEM_PROMPT: System prompt for simplify mode
+ *   - gatherGitChanges(cwd): Get diff context for analysis
  *
  * Dependencies: ./ollama.js, ./tools/registry.js, ./tool-call-parser.js,
- *               ./logger.js, ./constants.js
+ *               ./logger.js, ./constants.js, node:child_process
  * Depended on by: src/ui/App.js
  */
 
@@ -27,9 +28,15 @@ const SIMPLIFY_SYSTEM_PROMPT = `Analyze recent code changes and suggest simplifi
 
 Use read_file, list_files, grep to understand context. Output a prioritized list with file:line refs and before/after code.
 
-Look for: redundancy, over-engineering, complex conditionals, dead code, verbose patterns, unnecessary complexity.
+Common simplification opportunities:
+- Redundant code: duplicated logic, unnecessary variables
+- Over-engineering: premature abstraction, excessive layers
+- Complex conditionals: nested branches, inverted logic
+- Dead code: unused imports, unreachable paths
+- Verbose patterns: manual loops vs array methods, repeated checks
+- Unnecessary complexity: over-nested callbacks, redundant error handling
 
-Focus on substantive improvements. Skip trivial nitpicks.`;
+For each issue, show the specific code location and concrete before/after.`;
 
 const MAX_SIMPLIFY_ITERATIONS = 20;
 
