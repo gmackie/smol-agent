@@ -1,0 +1,8 @@
+[task]
+name = "multi-step"
+author = "smol-agent"
+labels = ["multi-step", "regression", "complex"]
+
+[task.timeouts]
+agent = 900       # 15 minutes
+verifier = 60     # 1 minute

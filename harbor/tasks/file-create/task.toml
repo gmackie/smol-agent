@@ -1,0 +1,8 @@
+[task]
+name = "file-create"
+author = "smol-agent"
+labels = ["file-ops", "regression", "simple"]
+
+[task.timeouts]
+agent = 300       # 5 minutes
+verifier = 30     # 30 seconds
