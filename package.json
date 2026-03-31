@@ -32,6 +32,9 @@
     "test:e2e": "node test/e2e/runner.js",
     "test:e2e:json": "node test/e2e/runner.js --json",
     "test:all": "npm test && npm run test:e2e",
+    "harbor:export": "node harbor/export-scenarios.js",
+    "harbor:export:dry-run": "node harbor/export-scenarios.js --dry-run",
+    "harbor:build": "docker build -t smol-agent-harbor -f harbor/Dockerfile .",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
   },

@@ -1,0 +1,1 @@
+Create a file "math.js" that exports a function `add(a, b)` returning `a + b`. Then create "test.js" that requires math.js and uses `console.log` to print `add(2, 3)`. Then run test.js with node and tell me the output.
