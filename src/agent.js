@@ -593,12 +593,34 @@ export class Agent extends EventEmitter {
 
   /**
    * Inject a user message into the running conversation.
-   * The message will be picked up on the next loop iteration.
+   * The message will be picked up at the next injection flush point:
+   *   - Before tool execution (skips all pending tool calls)
+   *   - Between sequential tool calls (skips remaining tool calls)
+   *   - After tool execution completes
+   *   - At the top of the next loop iteration (safety net)
    */
   inject(message) {
     if (this.running) {
       this._pendingInjections.push(message);
     }
+  }
+
+  /**
+   * Flush all pending injections into the message history.
+   * Called at multiple points during the tool loop to give the user
+   * faster steering control over the agent.
+   * @returns {number} Number of messages flushed.
+   */
+  _flushPendingInjections() {
+    let count = 0;
+    while (this._pendingInjections.length > 0) {
+      const injected = this._pendingInjections.shift();
+      this.messages.push({ role: "user", content: injected });
+      this.emit("injection", { content: injected });
+      logger.info(`Injected user message: ${injected.slice(0, 80)}`);
+      count++;
+    }
+    return count;
   }
 
   /**
@@ -1009,12 +1031,7 @@ export class Agent extends EventEmitter {
         }
 
         // ── Flush any injected user messages ──
-        while (this._pendingInjections.length > 0) {
-          const injected = this._pendingInjections.shift();
-          this.messages.push({ role: "user", content: injected });
-          this.emit("injection", { content: injected });
-          logger.info(`Injected user nudge: ${injected.slice(0, 80)}`);
-        }
+        this._flushPendingInjections();
 
         // Emit current usage for UI
         this.emit("token_usage", this.getTokenInfo());
@@ -1340,6 +1357,21 @@ export class Agent extends EventEmitter {
           return result;
         };
 
+        // ── Pre-execution injection check ──
+        // If the user sent a message while the LLM was streaming, skip
+        // all tool execution so the model can respond to the redirect.
+        if (this._pendingInjections.length > 0) {
+          logger.info(`Pending user message(s) — skipping ${uniqueToolCalls.length} tool call(s)`);
+          for (const tc of uniqueToolCalls) {
+            const skipResult = { skipped: true, reason: "User sent a new message" };
+            this.emit("tool_call", { name: tc.function.name, args: tc.function.arguments });
+            this.emit("tool_result", { name: tc.function.name, result: skipResult });
+            this.messages.push({ role: "tool", content: JSON.stringify(skipResult) });
+          }
+          this._flushPendingInjections();
+          continue;
+        }
+
         // Decide whether any call needs approval
         // Granular: check both the global _approveAll flag and per-category approvals
         const needsApproval = this._approvalHandler && !this._approveAll;
@@ -1382,6 +1414,21 @@ export class Agent extends EventEmitter {
             }
 
             results.push(await executeSingleTool(tc));
+
+            // Check for pending user messages between sequential tool calls.
+            // If the user sent a steering message, skip remaining tools so
+            // the LLM can respond to the new direction sooner.
+            if (this._pendingInjections.length > 0 && results.length < uniqueToolCalls.length) {
+              const remaining = uniqueToolCalls.length - results.length;
+              logger.info(`Pending user message — skipping remaining ${remaining} tool call(s)`);
+              for (let i = results.length; i < uniqueToolCalls.length; i++) {
+                const skipResult = { skipped: true, reason: "User sent a new message" };
+                this.emit("tool_call", { name: uniqueToolCalls[i].function.name, args: uniqueToolCalls[i].function.arguments });
+                this.emit("tool_result", { name: uniqueToolCalls[i].function.name, result: skipResult });
+                results.push(skipResult);
+              }
+              break;
+            }
           }
         } else {
           // Parallel — no approval needed (all safe, or user approved all)
@@ -1416,6 +1463,12 @@ export class Agent extends EventEmitter {
         for (const result of results) {
           this.messages.push({ role: "tool", content: JSON.stringify(result) });
         }
+
+        // ── Flush pending user messages after tool results ──
+        // Messages that arrived during tool execution are injected here
+        // so the LLM sees them immediately on the next call, rather than
+        // waiting for the top-of-loop flush on the next iteration.
+        this._flushPendingInjections();
 
         // Inject deferred loop warning (must come after tool results to
         // maintain valid message ordering for providers like Ollama)
