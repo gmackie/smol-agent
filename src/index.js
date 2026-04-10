@@ -160,6 +160,10 @@ let reviewBranch = undefined;   // branch to review (optional arg after --review
 let progressFd = undefined;    // --progress-fd <n> to write JSONL progress events
 let programmaticTools = undefined; // --programmatic-tools / --no-programmatic-tools
 let showCodeExec = false;       // --show-code-exec to show internal code_execution tool calls
+let remoteMode = false;         // --remote to run as REST server
+let remotePort = undefined;     // --port <n> for remote server port
+let remoteListenHost = undefined; // --listen <host> for remote server bind address
+let authToken = undefined;      // --auth-token <token> for remote server auth
 
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
@@ -214,6 +218,18 @@ for (let i = 0; i < args.length; i++) {
     programmaticTools = false;
   } else if (a === "--show-code-exec") {
     showCodeExec = true;
+  } else if (a === "--remote") {
+    remoteMode = true;
+  } else if (a === "--port" && args[i + 1]) {
+    remotePort = parseInt(args[++i], 10);
+    if (!Number.isFinite(remotePort) || remotePort < 1 || remotePort > 65535) {
+      console.error("Error: --port must be a valid port number (1-65535)");
+      process.exit(1);
+    }
+  } else if (a === "--listen" && args[i + 1]) {
+    remoteListenHost = args[++i];
+  } else if (a === "--auth-token" && args[i + 1]) {
+    authToken = args[++i];
   } else if (a === "--self-update") {
     runSelfUpdate();
   } else if (a === "--help") {
@@ -250,6 +266,10 @@ Options:
       --programmatic-tools  Enable programmatic tool calling (Anthropic: server-side, others: client-side)
       --no-programmatic-tools  Disable programmatic tool calling
       --acp                 Run as ACP (Agent Client Protocol) server over stdio
+      --remote              Run as a remote control REST server over HTTP
+      --port <n>            Port for remote server (default: 7700)
+      --listen <host>       Bind address for remote server (default: 0.0.0.0)
+      --auth-token <token>  Auth token for remote server (or use SMOL_AGENT_AUTH_TOKEN)
       --review [branch]     Review changes on a branch (default: current branch) and exit
       --show-code-exec      Show internal tool calls made by code_execution tool
       --watch-inbox         Watch inbox for cross-agent letters and process them
@@ -288,6 +308,8 @@ Examples:
   smol-agent -p anthropic "refactor the auth module"
   smol-agent -p grok -m grok-3 "add tests"
   smol-agent -d ./my-project "add a new feature"
+  smol-agent --remote                                # start REST server on port 7700
+  smol-agent --remote --port 8080 --auth-token secret  # custom port with auth
   smol-agent                                         # interactive mode`);
 }
 
@@ -315,8 +337,33 @@ if (listSessionsFlag) {
   process.exit(0);
 }
 
-// ── ACP mode ──────────────────────────────────────────────────────────
-if (acpMode) {
+// ── Remote server mode ───────────────────────────────────────────────
+if (remoteMode) {
+  const { startRemoteServer } = await import("./remote-server.js");
+  const { close } = startRemoteServer({
+    host,
+    model,
+    provider,
+    apiKey,
+    coreToolsOnly,
+    autoApprove,
+    authToken,
+    port: remotePort,
+    listenHost: remoteListenHost,
+  });
+
+  // Graceful shutdown
+  process.on("SIGINT", () => {
+    console.log("\nShutting down remote server...");
+    close();
+    process.exit(0);
+  });
+  process.on("SIGTERM", () => {
+    close();
+    process.exit(0);
+  });
+} else if (acpMode) {
+  // ── ACP mode ──────────────────────────────────────────────────────────
   const { startACPServer } = await import("./acp-server.js");
   startACPServer({
     host,
