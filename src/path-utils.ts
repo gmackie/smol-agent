@@ -34,9 +34,10 @@ export function resolveJailedPath(basePath: string, targetPath: string): string 
       const realParent = fs.realpathSync(parentDir);
       realTarget = path.join(realParent, path.basename(resolvedPath));
     } catch {
-      // Parent doesn't exist either - fall back to resolved path
-      // This is safe because we'll still check it doesn't escape
-      realTarget = resolvedPath;
+      // Parent doesn't exist either. Anchor the unresolved target to the
+      // canonical base path so /var vs /private/var differences on macOS
+      // don't produce false jail escapes for paths that are still inside.
+      realTarget = path.resolve(realBase, targetPath);
     }
   }
   

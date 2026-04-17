@@ -25,6 +25,7 @@
 import { BaseLLMProvider, MAX_RETRIES, type ChatMessage, type ToolDefinition, type StreamEvent, type OnRetryCallback, type ChatResponse } from "./base.js";
 import { formatAPIError } from "./errors.js";
 import { DEFAULT_MAX_TOKENS } from "../constants.js";
+import { buildRuntimeHeaders } from "../runtime/request-context.js";
 
 interface OpenAIToolCall {
   id?: string;
@@ -47,13 +48,16 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
   apiKey: string | null;
   baseURL: string;
   _providerName: string;
+  defaultHeaders: Record<string, string>;
 
-  constructor({ apiKey, baseURL, model, providerName, rateLimitConfig }: {
+  constructor({ apiKey, baseURL, model, providerName, rateLimitConfig, defaultHeaders, runtimeContext }: {
     apiKey?: string;
     baseURL?: string;
     model?: string;
     providerName?: string;
     rateLimitConfig?: Partial<import("./base.js").RateLimitConfig>;
+    defaultHeaders?: Record<string, string>;
+    runtimeContext?: Record<string, unknown>;
   } = {}) {
     super({
       model,
@@ -66,6 +70,10 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
     });
 
     this.apiKey = apiKey || null;
+    this.defaultHeaders = {
+      ...(defaultHeaders || {}),
+      ...(runtimeContext ? buildRuntimeHeaders(runtimeContext) : {}),
+    };
     this.baseURL = (baseURL || "https://api.openai.com/v1").replace(/\/+$/, "");
     this._providerName = providerName || "openai";
 
@@ -109,6 +117,7 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
 
   _headers(): Record<string, string> {
     const h: Record<string, string> = { "Content-Type": "application/json" };
+    Object.assign(h, this.defaultHeaders);
     if (this.apiKey) {
       h["Authorization"] = `Bearer ${this.apiKey}`;
     }

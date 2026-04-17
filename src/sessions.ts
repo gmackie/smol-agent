@@ -26,6 +26,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
+import { buildSessionMetadata } from "./runtime/session-metadata.js";
 
 const SESSIONS_DIR = ".smol-agent/state/sessions";
 
@@ -39,6 +40,7 @@ export interface Session {
   updatedAt: string;
   messageCount: number;
   summary: string | null;
+  runtimeContext?: Record<string, unknown>;
 }
 
 /**
@@ -89,15 +91,18 @@ function sessionPath(cwd: string, sessionId: string): string {
 /**
  * Create a new session metadata object.
  */
-export function createSession(name?: string | null): Session {
+export function createSession(
+  name?: string | null,
+  runtimeContext: Record<string, unknown> = {}
+): Session {
   const now = new Date().toISOString();
   return {
     id: generateSessionId(),
-    name: name || null,
     createdAt: now,
     updatedAt: now,
     messageCount: 0,
     summary: null,
+    ...buildSessionMetadata({ name, ...runtimeContext }),
   };
 }
 

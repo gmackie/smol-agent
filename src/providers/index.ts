@@ -41,6 +41,7 @@ import { OpenAICompatibleProvider } from "./openai-compatible.js";
 import { AnthropicProvider } from "./anthropic.js";
 import { CodexCLIProvider } from "./codex-cli.js";
 import type { BaseLLMProvider } from "./base.js";
+import { getRuntimeBaseURL } from "../runtime/request-context.js";
 
 export interface ProviderPreset {
   factory: (opts: ProviderOptions) => BaseLLMProvider;
@@ -57,6 +58,8 @@ export interface ProviderOptions {
   cwd?: string;
   programmaticToolCalling?: boolean;
   rateLimitConfig?: Partial<import("./base.js").RateLimitConfig>;
+  runtimeContext?: Record<string, unknown>;
+  defaultHeaders?: Record<string, string>;
 }
 
 /** Known provider presets with their defaults. */
@@ -154,9 +157,12 @@ export function createProvider({
   apiKey,
   cwd,
   programmaticToolCalling,
+  runtimeContext,
+  defaultHeaders,
 }: ProviderOptions = {}): BaseLLMProvider {
   const rawProvider = provider || process.env.SMOL_AGENT_PROVIDER || "ollama";
   const providerName = rawProvider.toLowerCase();
+  const runtimeBaseURL = host || getRuntimeBaseURL(runtimeContext);
 
   // Check if it's a known preset (case-insensitive)
   const preset = PROVIDER_PRESETS[providerName];
@@ -166,10 +172,12 @@ export function createProvider({
     return preset.factory({
       model: model || preset.defaultModel,
       host,
-      baseURL: host, // host doubles as baseURL for non-Ollama providers
+      baseURL: runtimeBaseURL,
       apiKey: key,
       cwd,
       programmaticToolCalling,
+      runtimeContext,
+      defaultHeaders,
     });
   }
 
@@ -181,6 +189,8 @@ export function createProvider({
       model: model || "default",
       apiKey: apiKey || process.env.OPENAI_API_KEY,
       providerName: "custom",
+      runtimeContext,
+      defaultHeaders,
     }) as BaseLLMProvider;
   }
 

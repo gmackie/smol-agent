@@ -39,11 +39,11 @@ import http from "node:http";
 import crypto from "node:crypto";
 import path from "node:path";
 import { createRequire } from "node:module";
-import { Agent } from "./agent.js";
 import { setAskHandler, getAskHandler } from "./tools/ask_user.js";
 import { loadSettings } from "./settings.js";
 import { logger } from "./logger.js";
 import { requiresApproval } from "./tools/registry.js";
+import { createSessionAgent } from "./runtime/interactive-agent.js";
 
 const require = createRequire(import.meta.url);
 const { version: PACKAGE_VERSION } = require("../package.json");
@@ -440,13 +440,13 @@ export function startRemoteServer(options = {}) {
     }
 
     const sessionId = crypto.randomUUID();
-    const agent = new Agent({
+    const { agent } = await createSessionAgent({
       host: options.host,
       model: options.model,
       provider: options.provider,
       apiKey: options.apiKey,
       jailDirectory: resolved,
-      coreToolsOnly: options.coreToolsOnly,
+      programmaticToolCalling: options.programmaticToolCalling,
     });
 
     // Load persisted settings

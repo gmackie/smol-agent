@@ -121,6 +121,23 @@ describe("createProvider()", () => {
     const p = createProvider({ provider: "openai", model: "gpt-4-turbo", apiKey: "k" });
     expect(p.model).toBe("gpt-4-turbo");
   });
+
+  test("uses tiered-router baseUrl from runtimeContext when host is not provided", () => {
+    const p = createProvider({
+      provider: "openai",
+      apiKey: "test-key",
+      runtimeContext: {
+        tieredRouter: {
+          baseUrl: "https://router.example/v1",
+          workflowId: 42,
+          protectionLevel: "protected",
+        },
+      },
+    });
+
+    expect(p).toBeInstanceOf(OpenAICompatibleProvider);
+    expect(p.baseURL).toBe("https://router.example/v1");
+  });
 });
 
 // ── listProviders / getDefaultModel ──────────────────────────────────────────

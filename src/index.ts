@@ -41,7 +41,7 @@ import { loadSettings } from "./settings.js";
 import { listSessions, findSession } from "./sessions.js";
 import { cleanup as cleanupTiktoken } from "./token-estimator.js";
 import { execSync } from "node:child_process";
-import { createProvider } from "./providers/index.js";
+import { createInteractiveAgent } from "./runtime/interactive-agent.js";
 
 
 // XDG-compliant global config directory
@@ -358,6 +358,7 @@ async function main(): Promise<void> {
       model,
       provider,
       apiKey,
+      programmaticToolCalling: programmaticTools,
       coreToolsOnly: false,
       autoApprove,
       authToken,
@@ -380,13 +381,14 @@ async function main(): Promise<void> {
 
   // Handle --acp
   if (acpMode) {
-    const { runACP } = await import("./acp-server.js");
-    await runACP({
+    const { startACPServer } = await import("./acp-server.js");
+    startACPServer({
       jailDirectory,
       model,
       provider,
       host,
       apiKey,
+      programmaticToolCalling: programmaticTools,
     });
     return;
   }
@@ -437,39 +439,23 @@ async function main(): Promise<void> {
   const providerName = provider || (settings.provider as string | undefined) || process.env.SMOL_AGENT_PROVIDER || "ollama";
   const modelName = model || (settings.model as string | undefined) || process.env.SMOL_AGENT_MODEL;
 
-  const prov = createProvider({
+  const contextSize = typeof settings.contextSize === 'number' ? settings.contextSize : undefined;
+
+  const { agent, resumed } = await createInteractiveAgent({
+    jailDirectory,
     provider: providerName,
     model: modelName,
     host,
     apiKey,
-  });
-
-  const contextSize = typeof settings.contextSize === 'number' ? settings.contextSize : undefined;
-
-  const agent = new Agent({
-    llmProvider: prov,
-    model: modelName,
-    jailDirectory,
-    autoApprove,
-    autoApproveWrites,
-    autoApproveExecute,
-    sessionId,
-    sessionName,
-    settings,
-    programmaticTools,
-    showCodeExec,
-    progressFd,
+    contextSize,
     approvedCategories: settings.approvedCategories,
+    programmaticToolCalling: programmaticTools,
+    sessionId,
   });
 
   // Load session if resuming
-  if (sessionId) {
-    const found = await findSession(jailDirectory, sessionId);
-    if (found) {
-      agent.loadSession(found);
-    } else {
-      console.warn(`Session ${sessionId} not found. Starting fresh.`);
-    }
+  if (sessionId && !resumed) {
+    console.warn(`Session ${sessionId} not found. Starting fresh.`);
   }
 
   // Start UI

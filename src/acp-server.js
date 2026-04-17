@@ -27,12 +27,12 @@ import { Readable, Writable } from "node:stream";
 import crypto from "node:crypto";
 import path from "node:path";
 import { createRequire } from "node:module";
-import { Agent } from "./agent.js";
 import { setAskHandler, getAskHandler } from "./tools/ask_user.js";
 import { loadSettings } from "./settings.js";
 import { logger } from "./logger.js";
 import { requiresApproval } from "./tools/registry.js";
 import { formatDiff, formatReplaceDiff, formatNewFileDiff } from "./ui/diff.js";
+import { createSessionAgent } from "./runtime/interactive-agent.js";
 
 const require = createRequire(import.meta.url);
 const { version: PACKAGE_VERSION } = require("../package.json");
@@ -138,13 +138,13 @@ class SmolACPAgent {
       throw new acp.RequestError(-32602, `Maximum concurrent sessions (${MAX_SESSIONS}) reached. Close the existing session before opening a new one.`);
     }
 
-    const agent = new Agent({
+    const { agent } = await createSessionAgent({
       host: this._host,
       model: this._model,
       provider: this._provider,
       apiKey: this._apiKey,
       jailDirectory: resolved,
-      coreToolsOnly: this._coreToolsOnly,
+      programmaticToolCalling: this._programmaticToolCalling,
     });
 
     // Load persisted settings
@@ -560,6 +560,7 @@ export function startACPServer(options = {}) {
     acpAgent._contextSize = options.contextSize;
     acpAgent._coreToolsOnly = options.coreToolsOnly;
     acpAgent._autoApprove = options.autoApprove;
+    acpAgent._programmaticToolCalling = options.programmaticToolCalling;
     acpAgent._authToken = options.authToken || process.env.SMOL_AGENT_AUTH_TOKEN || null;
     return acpAgent;
   }, stream);

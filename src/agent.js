@@ -280,12 +280,31 @@ export class Agent extends EventEmitter {
    * @param {boolean} [options.coreToolsOnly] - Restrict to core tools
    * @param {boolean} [options.programmaticToolCalling] - Enable programmatic tool calling
    * @param {string[]} [options.approvedCategories] - Pre-approved tool categories from settings
+   * @param {Record<string, unknown>} [options.runtimeContext] - Runtime routing/workflow context
+   * @param {Record<string, string>} [options.defaultHeaders] - Default provider request headers
    */
-  constructor({ host, model, provider, apiKey, llmProvider, contextSize, maxTokens, jailDirectory, coreToolsOnly, programmaticToolCalling, approvedCategories } = {}) {
+  constructor({ host, model, provider, apiKey, llmProvider, contextSize, maxTokens, jailDirectory, coreToolsOnly, programmaticToolCalling, approvedCategories, runtimeContext, defaultHeaders } = {}) {
     super();
 
+    this._providerConfig = llmProvider
+      ? null
+      : {
+          provider,
+          model,
+          host,
+          apiKey,
+          cwd: jailDirectory || process.cwd(),
+          programmaticToolCalling,
+        };
+    this._runtimeContext = runtimeContext || {};
+    this._defaultHeaders = defaultHeaders || {};
+
     // Create or use the provided LLM provider
-    this.llmProvider = llmProvider || createProvider({ provider, model, host, apiKey, cwd: jailDirectory || process.cwd(), programmaticToolCalling });
+    this.llmProvider = llmProvider || createProvider({
+      ...this._providerConfig,
+      runtimeContext: this._runtimeContext,
+      defaultHeaders: this._defaultHeaders,
+    });
     this.model = this.llmProvider.model;
     this.contextSize = contextSize; // AGENT.md line limit only
     this.maxTokens = maxTokens || DEFAULT_MAX_TOKENS;
@@ -1648,12 +1667,25 @@ What would you like to do?`;
     return this._session;
   }
 
+  _refreshProviderForRuntimeContext() {
+    if (!this._providerConfig) return;
+    this.llmProvider = createProvider({
+      ...this._providerConfig,
+      runtimeContext: this._runtimeContext,
+      defaultHeaders: this._defaultHeaders,
+    });
+    this.model = this.llmProvider.model;
+  }
+
   /**
    * Start a new session.
    * @param {string} [name] - Optional human-friendly name
+   * @param {Record<string, unknown>} [runtimeContext] - Runtime workflow context
    */
-  startSession(name) {
-    this._session = createSession(name);
+  startSession(name, runtimeContext = this._runtimeContext) {
+    this._runtimeContext = runtimeContext || {};
+    this._refreshProviderForRuntimeContext();
+    this._session = createSession(name, this._runtimeContext);
     logger.info(`Session started: ${this._session.id}${name ? ` (${name})` : ""}`);
     return this._session;
   }
@@ -1667,6 +1699,9 @@ What would you like to do?`;
   async resumeSession(sessionId) {
     const data = await fetchSession(this.jailDirectory, sessionId);
     if (!data) return false;
+
+    this._runtimeContext = data.runtimeContext || this._runtimeContext || {};
+    this._refreshProviderForRuntimeContext();
 
     // Initialize system context first
     await this._init();
@@ -1683,6 +1718,7 @@ What would you like to do?`;
       updatedAt: data.updatedAt,
       messageCount: data.messageCount,
       summary: data.summary,
+      runtimeContext: data.runtimeContext,
     };
 
     logger.info(`Session resumed: ${data.id} (${restoredMessages.length} messages)`);
@@ -1702,6 +1738,7 @@ What would you like to do?`;
       this._session.updatedAt = saved.updatedAt;
       this._session.messageCount = saved.messageCount;
       this._session.summary = saved.summary;
+      this._session.runtimeContext = saved.runtimeContext;
       logger.info(`Session saved: ${this._session.id} (${saved.messageCount} messages)`);
       return saved;
     } catch (err) {
