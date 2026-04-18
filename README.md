@@ -603,6 +603,10 @@ smol-agent --acp
 
 Communicates via JSON-RPC over stdio, compatible with ACP-compatible editors.
 
+When using token auth (`SMOL_AGENT_AUTH_TOKEN` or `--auth-token`), send the secret in `authenticate` as `_meta.token` with `methodId: "smol_bearer"` (the SDK strips other fields).
+
+For **known gaps** (single concurrent session, MCP params, remote vs disk session ids), **experimenting with a sibling checkout** such as `../t3code` as the jail (`-d`), and a phased plan to close limitations, see [docs/acp-t3code-roadmap.md](docs/acp-t3code-roadmap.md).
+
 ## Cross-Agent Communication
 
 smol-agent instances can communicate across repositories using the **inbox/letter protocol**. This allows a frontend agent to request backend changes, a main agent to delegate to a documentation agent, etc.

@@ -74,6 +74,13 @@ The agent is an EventEmitter that drives a loop: send messages to the LLM provid
 | `acp-server.js` | 535 | **Agent Client Protocol server.** Implements ACP spec for IDE/editor integration. Exposes agent via JSON-RPC. Handles tool kind mapping for approvals. |
 | `settings.js` | ~50 | User settings loaded from `.smol-agent/settings.json`. |
 
+### Docs (`docs/`)
+
+| File | Purpose |
+|------|---------|
+| `cross-agent-communication.md` | Cross-repo inbox/letter protocol between agents. |
+| `acp-t3code-roadmap.md` | **Planning only:** ACP limitations, phased backlog, experimenting with jail pointed at a sibling `../t3code` checkout; not a t3code product integration. |
+
 ### Providers (src/providers/)
 
 Multi-provider support for different LLM backends:
