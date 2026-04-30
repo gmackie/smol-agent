@@ -42,6 +42,9 @@ import { listSessions, findSession } from "./sessions.js";
 import { cleanup as cleanupTiktoken } from "./token-estimator.js";
 import { execSync } from "node:child_process";
 import { createInteractiveAgent } from "./runtime/interactive-agent.js";
+import { createLocalHost } from "./runtime/local-host.js";
+import { createGenTrellisHost } from "./runtime/gentrellis-host.js";
+import { isProjectCommand, runProjectCommand } from "./commands/project-commands.js";
 
 
 // XDG-compliant global config directory
@@ -50,6 +53,38 @@ const GLOBAL_CONFIG_DIR = path.join(XDG_CONFIG_HOME, "smol-agent");
 
 // Free tiktoken WASM resources on exit
 process.on("exit", () => { cleanupTiktoken().catch(() => {}); });
+
+async function resolveAgentHost(agentHostUrl: string | undefined, jailDirectory: string) {
+  if (!agentHostUrl) {
+    return createLocalHost({ jailDirectory });
+  }
+
+  const match = agentHostUrl.match(/^gentrellis:\/\/([^/]+)(\/workflow\/(\d+))?/);
+  if (match) {
+    const hostPort = match[1];
+    const workflowId = match[3] ? parseInt(match[3], 10) : undefined;
+    const protocol = hostPort.includes("localhost") || hostPort.includes("127.0.0.1") ? "http" : "https";
+    const baseUrl = `${protocol}://${hostPort}`;
+    const token = process.env.GENTRELLIS_API_KEY || undefined;
+
+    console.log(`Connecting to GenTrellis host: ${baseUrl}${workflowId ? ` (workflow ${workflowId})` : ""}`);
+
+    const resolvedHost = createGenTrellisHost({
+      baseUrl,
+      workflowId,
+      token,
+    });
+    try {
+      await resolvedHost.refreshTools();
+    } catch (err) {
+      console.warn(`Warning: failed to load governed tool catalog from GenTrellis: ${err.message}`);
+    }
+    return resolvedHost;
+  }
+
+  console.error(`Error: Unknown agent host protocol in '${agentHostUrl}'. Supported: gentrellis://`);
+  process.exit(1);
+}
 
 // ── Self-update ────────────────────────────────────────────────────────
 
@@ -163,6 +198,7 @@ Options:
       --approve-execute     Auto-approve shell command execution (but still prompt for writes)
       --programmatic-tools  Enable programmatic tool calling (Anthropic: server-side, others: client-side)
       --no-programmatic-tools  Disable programmatic tool calling
+      --agent-host <url>    Connect to a governed host (e.g. gentrellis://host:port/workflow/1)
       --acp                 Run as ACP (Agent Client Protocol) server over stdio
       --review [branch]     Review changes on a branch (default: current branch) and exit
       --show-code-exec      Show internal tool calls made by code_execution tool
@@ -231,6 +267,9 @@ let remoteMode = false;         // --remote to run as REST server
 let remotePort = undefined;     // --port <n> for remote server port
 let remoteListenHost = undefined; // --listen <host> for remote server bind address
 let authToken = undefined;      // --auth-token <token> for remote server auth
+let agentHostUrl: string | undefined = undefined;
+let commandName: string | undefined = undefined;
+let commandArgs: string[] = [];
 
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
@@ -297,11 +336,17 @@ for (let i = 0; i < args.length; i++) {
     remoteListenHost = args[++i];
   } else if (a === "--auth-token" && args[i + 1]) {
     authToken = args[++i];
+  } else if (a === "--agent-host" && args[i + 1]) {
+    agentHostUrl = args[++i];
   } else if (a === "--self-update") {
     runSelfUpdate();
   } else if (a === "--help") {
     printUsage();
     process.exit(0);
+  } else if (!a.startsWith("-") && !commandName && isProjectCommand(a)) {
+    commandName = a;
+    commandArgs = args.slice(i + 1);
+    break;
   } else if (!a.startsWith("-")) {
     promptText = args.slice(i).join(" ");
     break;
@@ -317,6 +362,21 @@ if (!apiKey && process.env.SMOL_AGENT_API_KEY) {
 // ── Main entry point ───────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  if (commandName) {
+    try {
+      const exitCode = await runProjectCommand({
+        commandName,
+        commandArgs,
+        cwd: jailDirectory,
+        io: console,
+      });
+      process.exit(exitCode);
+    } catch (err) {
+      console.error(err.message);
+      process.exit(1);
+    }
+  }
+
   // Handle --list-sessions
   if (listSessionsFlag) {
     const sessions = await listSessions(jailDirectory);
@@ -446,12 +506,14 @@ async function main(): Promise<void> {
   const modelName = model || (settings.model as string | undefined) || process.env.SMOL_AGENT_MODEL;
 
   const contextSize = typeof settings.contextSize === 'number' ? settings.contextSize : undefined;
+  const resolvedHost = await resolveAgentHost(agentHostUrl, jailDirectory);
 
   const { agent, resumed } = await createInteractiveAgent({
     jailDirectory,
     provider: providerName,
     model: modelName,
     host,
+    agentHost: resolvedHost,
     apiKey,
     contextSize,
     approvedCategories: settings.approvedCategories,

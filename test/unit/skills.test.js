@@ -295,6 +295,180 @@ Legacy body`);
     // Standard format should win
     expect(skills[0].description).toBe('Standard format');
   });
+
+  test('loads skills from a configured cached source with qualified names', async () => {
+    const previousXdg = process.env.XDG_CONFIG_HOME;
+    const xdgDir = createTempDir('smol-xdg-');
+    process.env.XDG_CONFIG_HOME = xdgDir;
+
+    try {
+      fs.writeFileSync(
+        path.join(tempDir, 'smol-agent.json'),
+        JSON.stringify({
+          sources: [{ alias: 'vercel' }],
+        }, null, 2)
+      );
+
+      const lockDir = path.join(tempDir, '.smol-agent');
+      fs.mkdirSync(lockDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(lockDir, 'sources.lock.json'),
+        JSON.stringify({
+          lockfileVersion: 1,
+          sources: {
+            src_vercel: {
+              url: 'https://github.com/vercel-labs/agent-skills',
+              revision: 'abc123',
+            },
+          },
+        }, null, 2)
+      );
+
+      const cachedSkillDir = path.join(
+        xdgDir,
+        'smol-agent',
+        'sources',
+        'src_vercel',
+        'skills',
+        'web-design-guidelines'
+      );
+      fs.mkdirSync(cachedSkillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(cachedSkillDir, 'SKILL.md'),
+        `---
+name: web-design-guidelines
+description: External source-backed skill
+---
+Body`
+      );
+
+      const skills = await loadSkills(tempDir);
+      const externalSkill = skills.find((skill) => skill.name === 'vercel:web-design-guidelines');
+
+      expect(externalSkill).toBeTruthy();
+      expect(externalSkill.description).toBe('External source-backed skill');
+      expect(externalSkill.source).toBe('source');
+      expect(externalSkill.sourceId).toBe('src_vercel');
+      expect(externalSkill.qualifiedName).toBe('vercel:web-design-guidelines');
+    } finally {
+      if (previousXdg === undefined) {
+        delete process.env.XDG_CONFIG_HOME;
+      } else {
+        process.env.XDG_CONFIG_HOME = previousXdg;
+      }
+      cleanupTempDir(xdgDir);
+    }
+  });
+
+  test('filters source-backed skills using the default agent definition', async () => {
+    const previousXdg = process.env.XDG_CONFIG_HOME;
+    const xdgDir = createTempDir('smol-xdg-');
+    process.env.XDG_CONFIG_HOME = xdgDir;
+
+    try {
+      const localSkillDir = path.join(tempDir, '.smol-agent', 'skills', 'local-skill');
+      fs.mkdirSync(localSkillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(localSkillDir, 'SKILL.md'),
+        `---
+name: local-skill
+description: Local skill
+---
+Body`
+      );
+
+      fs.writeFileSync(
+        path.join(tempDir, 'smol-agent.json'),
+        JSON.stringify({
+          defaultAgentDefinition: 'frontend-agent',
+          sourceCatalog: {
+            allowed: { url: 'https://example.com/allowed.git', label: 'Allowed Source' },
+            blocked: { url: 'https://example.com/blocked.git', label: 'Blocked Source' },
+          },
+          sources: [{ alias: 'allowed' }, { alias: 'blocked' }],
+          groups: {
+            'frontend-defaults': ['allowed:allowed-skill', 'local-skill'],
+          },
+          agentDefinitions: {
+            'frontend-agent': {
+              sourceIds: ['src_allowed'],
+              defaultGroups: ['frontend-defaults'],
+              allowedArtifacts: [],
+            },
+          },
+        }, null, 2)
+      );
+
+      const lockDir = path.join(tempDir, '.smol-agent');
+      fs.mkdirSync(lockDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(lockDir, 'sources.lock.json'),
+        JSON.stringify({
+          lockfileVersion: 1,
+          sources: {
+            src_allowed: {
+              url: 'https://example.com/allowed.git',
+              revision: 'allowed123',
+            },
+            src_blocked: {
+              url: 'https://example.com/blocked.git',
+              revision: 'blocked123',
+            },
+          },
+        }, null, 2)
+      );
+
+      const allowedSkillDir = path.join(
+        xdgDir,
+        'smol-agent',
+        'sources',
+        'src_allowed',
+        'skills',
+        'allowed-skill'
+      );
+      fs.mkdirSync(allowedSkillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(allowedSkillDir, 'SKILL.md'),
+        `---
+name: allowed-skill
+description: Allowed remote skill
+---
+Body`
+      );
+
+      const blockedSkillDir = path.join(
+        xdgDir,
+        'smol-agent',
+        'sources',
+        'src_blocked',
+        'skills',
+        'blocked-skill'
+      );
+      fs.mkdirSync(blockedSkillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(blockedSkillDir, 'SKILL.md'),
+        `---
+name: blocked-skill
+description: Blocked remote skill
+---
+Body`
+      );
+
+      const skills = await loadSkills(tempDir);
+      const names = skills.map((skill) => skill.name);
+
+      expect(names).toContain('allowed:allowed-skill');
+      expect(names).toContain('local-skill');
+      expect(names).not.toContain('blocked:blocked-skill');
+    } finally {
+      if (previousXdg === undefined) {
+        delete process.env.XDG_CONFIG_HOME;
+      } else {
+        process.env.XDG_CONFIG_HOME = previousXdg;
+      }
+      cleanupTempDir(xdgDir);
+    }
+  });
 });
 
 describe('loadSkillResource', () => {

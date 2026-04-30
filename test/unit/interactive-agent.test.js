@@ -61,4 +61,57 @@ describe("createInteractiveAgent", () => {
 
     expect(agent.llmProvider.programmaticToolCalling).toBe(true);
   });
+
+  it("passes an explicit agentHost through to the created agent", async () => {
+    const agentHost = {
+      runtimeContext: {
+        tieredRouter: {
+          baseUrl: "https://router.example/v1",
+          workflowId: 7,
+          protectionLevel: "controlled",
+        },
+      },
+      sessionStore: {
+        create: async (name, runtimeContext) => ({
+          id: "host-session",
+          name,
+          runtimeContext,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          messageCount: 0,
+          summary: null,
+          messages: [],
+        }),
+        load: async () => null,
+        save: async (session) => session,
+      },
+      memoryStore: {
+        read: async () => "",
+        write: async () => {},
+      },
+      messageTransport: {
+        send: async () => ({}),
+        receive: async () => null,
+        listThreads: async () => [],
+        updateStatus: async () => ({ ok: true }),
+      },
+      toolProvider: {
+        getTools: () => [],
+        execute: async () => ({}),
+      },
+      eventSink: {
+        emit: () => {},
+      },
+    };
+
+    const { agent } = await createInteractiveAgent({
+      jailDirectory: cwd,
+      provider: "openai",
+      model: "gpt-4o",
+      apiKey: "test-key",
+      agentHost,
+    });
+
+    expect(agent.host).toBe(agentHost);
+  });
 });

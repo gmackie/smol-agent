@@ -83,6 +83,7 @@ import { setActivateGroupCallback } from "./tools/discover_tools.js";
 import { LRUToolCache } from "./lru-tool-cache.js";
 import { buildCavemanPrompt, buildCavemanCommitRules, buildCavemanReviewRules, CAVEMAN_LEVELS, DEFAULT_LEVEL } from "./caveman.js";
 import { setCompressProvider } from "./tools/caveman_compress.js";
+import { createLocalHost } from "./runtime/local-host.js";
 
 // ── Thinking tags parser ─────────────────────────────────────────────
 
@@ -283,8 +284,11 @@ export class Agent extends EventEmitter {
    * @param {Record<string, unknown>} [options.runtimeContext] - Runtime routing/workflow context
    * @param {Record<string, string>} [options.defaultHeaders] - Default provider request headers
    */
-  constructor({ host, model, provider, apiKey, llmProvider, contextSize, maxTokens, jailDirectory, coreToolsOnly, programmaticToolCalling, approvedCategories, runtimeContext, defaultHeaders } = {}) {
+  constructor({ host, model, provider, apiKey, llmProvider, contextSize, maxTokens, jailDirectory, coreToolsOnly, programmaticToolCalling, approvedCategories, runtimeContext, defaultHeaders, agentHost } = {}) {
     super();
+
+    const resolvedJailDirectory = jailDirectory || process.cwd();
+    this.host = agentHost || createLocalHost({ jailDirectory: resolvedJailDirectory });
 
     this._providerConfig = llmProvider
       ? null
@@ -293,7 +297,7 @@ export class Agent extends EventEmitter {
           model,
           host,
           apiKey,
-          cwd: jailDirectory || process.cwd(),
+          cwd: resolvedJailDirectory,
           programmaticToolCalling,
         };
     this._runtimeContext = runtimeContext || {};
@@ -308,7 +312,7 @@ export class Agent extends EventEmitter {
     this.model = this.llmProvider.model;
     this.contextSize = contextSize; // AGENT.md line limit only
     this.maxTokens = maxTokens || DEFAULT_MAX_TOKENS;
-    this.jailDirectory = jailDirectory || process.cwd();
+    this.jailDirectory = resolvedJailDirectory;
     setLogBaseDir(this.jailDirectory);
     this.messages = [];
     this.running = false;
@@ -622,12 +626,42 @@ export class Agent extends EventEmitter {
    */
   _getCurrentTools() {
     if (!this._progressiveDiscovery) {
-      return registry.getTools(this.coreToolsOnly);
+      return this.host.toolProvider.getTools(this.coreToolsOnly);
     }
     // Get tools for active groups, plus any ungrouped tools (e.g. session tools)
     const tools = registry.getToolsForGroups(this._activeToolGroups, /* includeUngrouped */ true);
+    const allowedNames = new Set(
+      (this.host.toolProvider.getTools(this.coreToolsOnly) || [])
+        .map((tool) => tool?.function?.name)
+        .filter(Boolean),
+    );
     // Filter out LRU-evicted tools to save context space
-    return this._lruCache.filterTools(tools);
+    return this._lruCache
+      .filterTools(tools)
+      .filter((tool) => allowedNames.has(tool?.function?.name));
+  }
+
+  _getAllowedToolNames(coreOnly = this.coreToolsOnly) {
+    return new Set(
+      (this.host.toolProvider.getTools(coreOnly) || [])
+        .map((tool) => tool?.function?.name)
+        .filter(Boolean),
+    );
+  }
+
+  _getVisibleExtendedToolNames() {
+    const allowedNames = this._getAllowedToolNames(false);
+    return registry.extendedToolNames().filter((name) => allowedNames.has(name));
+  }
+
+  _getVisibleInactiveGroups() {
+    const allowedNames = this._getAllowedToolNames(false);
+    return Object.entries(registry.getToolGroups())
+      .filter(([groupName, group]) => (
+        !this._activeToolGroups.has(groupName) &&
+        group.tools.some((toolName) => allowedNames.has(toolName))
+      ))
+      .map(([groupName]) => groupName);
   }
 
   /**
