@@ -5,6 +5,7 @@ export interface InteractiveAgentOptions {
   provider?: string;
   model?: string;
   host?: string;
+  agentHost?: Record<string, unknown>;
   apiKey?: string;
   contextSize?: number;
   approvedCategories?: string[];
@@ -17,6 +18,7 @@ export async function createSessionAgent({
   provider,
   model,
   host,
+  agentHost,
   apiKey,
   contextSize,
   approvedCategories,
@@ -27,11 +29,13 @@ export async function createSessionAgent({
     provider,
     model,
     host,
+    agentHost,
     apiKey,
     contextSize,
     jailDirectory,
     approvedCategories,
     programmaticToolCalling,
+    runtimeContext: agentHost?.runtimeContext,
   });
 
   let resumed = false;
