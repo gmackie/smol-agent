@@ -47,6 +47,10 @@ import { createGenTrellisHost } from "./runtime/gentrellis-host.js";
 import { isProjectCommand, runProjectCommand } from "./commands/project-commands.js";
 
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 // XDG-compliant global config directory
 const XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
 const GLOBAL_CONFIG_DIR = path.join(XDG_CONFIG_HOME, "smol-agent");
@@ -77,7 +81,7 @@ async function resolveAgentHost(agentHostUrl: string | undefined, jailDirectory:
     try {
       await resolvedHost.refreshTools();
     } catch (err) {
-      console.warn(`Warning: failed to load governed tool catalog from GenTrellis: ${err.message}`);
+      console.warn(`Warning: failed to load governed tool catalog from GenTrellis: ${errorMessage(err)}`);
     }
     return resolvedHost;
   }
@@ -372,7 +376,7 @@ async function main(): Promise<void> {
       });
       process.exit(exitCode);
     } catch (err) {
-      console.error(err.message);
+      console.error(errorMessage(err));
       process.exit(1);
     }
   }
