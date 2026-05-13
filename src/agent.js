@@ -39,6 +39,7 @@ import { logger, setLogBaseDir } from "./logger.js";
 import { ContextManager } from "./context-manager.js";
 import { getCurrentPlan } from "./tools/save_plan.js";
 import { parseToolCallsFromContent } from "./tool-call-parser.js";
+import { validateToolArgs } from "./tool-arg-validator.js";
 import { classifyError, formatUserError } from "./errors.js";
 import { prehydrate, extractFileRefs } from "./prehydrate.js";
 import { ensureInitialized as ensureTiktoken } from "./token-estimator.js";
@@ -1276,6 +1277,16 @@ export class Agent extends EventEmitter {
                 toolCalls = toolCalls.filter(tc => !(DANGEROUS_TOOLS.has(tc.function.name) && tc._textParsed));
               }
             }
+            // Validate arguments against tool schema
+            const toolSchemaMap = new Map(tools.map(t => [t.function.name, t.function.parameters]));
+            toolCalls = toolCalls.filter(tc => {
+              const schema = toolSchemaMap.get(tc.function.name);
+              const { valid, reason } = validateToolArgs(tc.function.arguments, schema);
+              if (!valid) {
+                logger.warn(`Rejected text-parsed tool call ${tc.function.name}: ${reason}`);
+              }
+              return valid;
+            });
           }
         }
 
