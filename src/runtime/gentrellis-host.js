@@ -58,6 +58,9 @@ export function createGenTrellisHost({
   if (!baseUrl) {
     throw new Error("GenTrellis host requires a baseUrl");
   }
+  if (runId !== undefined && (typeof runId !== "number" || !Number.isInteger(runId) || runId <= 0)) {
+    throw new Error("GenTrellis host runId must be a positive integer");
+  }
 
   const runtimeContext = {
     tieredRouter: {
@@ -312,9 +315,9 @@ export function createGenTrellisHost({
           method: "POST",
           body: {
             type: event.type || "tool.call.started",
-            event_id: event.event_id || undefined,
+            ...(event.event_id ? { event_id: event.event_id } : {}),
             sender: event.sender || "smol-agent",
-            body: event.body || event,
+            body: event.body || {},
           },
           token,
         }).catch((err) => {
