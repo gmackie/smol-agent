@@ -1258,11 +1258,14 @@ export class Agent extends EventEmitter {
             const allowedNames = new Set(tools.map(t => t.function.name));
             toolCalls = toolCalls.filter(tc => allowedNames.has(tc.function.name));
             // Block dangerous tools invoked via text-parsed calls (higher injection risk)
-            const DANGEROUS_TOOLS = new Set(["run_command", "write_file"]);
-            const hadDangerous = toolCalls.some(tc => DANGEROUS_TOOLS.has(tc.function.name) && tc._textParsed);
-            if (hadDangerous) {
-              logger.warn("Blocked dangerous tool call from text-parsed content (potential prompt injection)");
-              toolCalls = toolCalls.filter(tc => !(DANGEROUS_TOOLS.has(tc.function.name) && tc._textParsed));
+            // Skip this check when auto-approve is on — the user has opted into full tool execution
+            if (!this._approveAll) {
+              const DANGEROUS_TOOLS = new Set(["run_command", "write_file"]);
+              const hadDangerous = toolCalls.some(tc => DANGEROUS_TOOLS.has(tc.function.name) && tc._textParsed);
+              if (hadDangerous) {
+                logger.warn("Blocked dangerous tool call from text-parsed content (potential prompt injection)");
+                toolCalls = toolCalls.filter(tc => !(DANGEROUS_TOOLS.has(tc.function.name) && tc._textParsed));
+              }
             }
           }
         }

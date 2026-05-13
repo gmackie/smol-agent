@@ -2031,8 +2031,18 @@ Reflect on these logs and determine if there's a skill worth creating. Process a
 async function _runHeadless(agent, prompt) {
   let responseText = "";
   agent.on("response", ({ content }) => { responseText = content; });
-  agent.on("token", ({ content }) => { process.stdout.write(content); });
   agent.on("stream_start", () => { responseText = ""; });
+  agent.on("tool_call", ({ name, args }) => {
+    process.stderr.write(`[tool] ${name}(${JSON.stringify(args).slice(0, 200)})\n`);
+  });
+  agent.on("tool_result", ({ name, result }) => {
+    process.stderr.write(`[result] ${name}: ${JSON.stringify(result).slice(0, 200)}\n`);
+  });
+
+  // In headless mode, ask_user cannot prompt interactively.
+  // Register a handler that tells the model to proceed with defaults.
+  const { setAskHandler } = await import("../tools/ask_user.js");
+  setAskHandler(async () => "(headless mode — no interactive input available, proceed with best judgment)");
 
   try {
     await agent._init();
@@ -2043,8 +2053,9 @@ async function _runHeadless(agent, prompt) {
     process.exit(1);
   }
 
-  if (responseText && !responseText.endsWith("\n")) {
-    process.stdout.write("\n");
+  if (responseText) {
+    process.stdout.write(responseText);
+    if (!responseText.endsWith("\n")) process.stdout.write("\n");
   }
   process.exit(0);
 }
