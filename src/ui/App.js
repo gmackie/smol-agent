@@ -683,7 +683,12 @@ function buildContextBar(modelName, tokenUsage, gitStats, width) {
 // ═══ Main entry point ═══
 
 export function startApp(agent, initialPrompt, options = {}) {
-  const { showCodeExec = false } = options;
+  const { showCodeExec = false, headless = false } = options;
+
+  if (headless && initialPrompt) {
+    return _runHeadless(agent, initialPrompt);
+  }
+
   const terminal = new ProcessTerminal();
   const tui = new TUI(terminal);
 
@@ -2021,4 +2026,25 @@ Reflect on these logs and determine if there's a skill worth creating. Process a
   });
 
   tui.start();
+}
+
+async function _runHeadless(agent, prompt) {
+  let responseText = "";
+  agent.on("response", ({ content }) => { responseText = content; });
+  agent.on("token", ({ content }) => { process.stdout.write(content); });
+  agent.on("stream_start", () => { responseText = ""; });
+
+  try {
+    await agent._init();
+    if (agent._approveAll === undefined) agent._approveAll = true;
+    await agent.run(prompt);
+  } catch (err) {
+    process.stderr.write(`Error: ${err.message}\n`);
+    process.exit(1);
+  }
+
+  if (responseText && !responseText.endsWith("\n")) {
+    process.stdout.write("\n");
+  }
+  process.exit(0);
 }

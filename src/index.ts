@@ -205,6 +205,7 @@ Options:
       --agent-host <url>    Connect to a governed host (e.g. gentrellis://host:port/workflow/1)
       --acp                 Run as ACP (Agent Client Protocol) server over stdio
       --review [branch]     Review changes on a branch (default: current branch) and exit
+      --headless            Process initial prompt and exit (no interactive TUI)
       --show-code-exec      Show internal tool calls made by code_execution tool
       --watch-inbox         Watch inbox for cross-agent letters and process them
       --progress-fd <n>    Write JSONL progress events to file descriptor n
@@ -267,6 +268,7 @@ let reviewBranch: string | undefined = undefined;   // branch to review (optiona
 let progressFd: number | undefined = undefined;    // --progress-fd <n> to write JSONL progress events
 let programmaticTools: boolean | undefined = undefined; // --programmatic-tools / --no-programmatic-tools
 let showCodeExec = false;       // --show-code-exec to show internal code_execution tool calls
+let headless = false;           // --headless to process prompt and exit
 let remoteMode = false;         // --remote to run as REST server
 let remotePort = undefined;     // --port <n> for remote server port
 let remoteListenHost = undefined; // --listen <host> for remote server bind address
@@ -328,6 +330,8 @@ for (let i = 0; i < args.length; i++) {
     programmaticTools = false;
   } else if (a === "--show-code-exec") {
     showCodeExec = true;
+  } else if (a === "--headless") {
+    headless = true;
   } else if (a === "--remote") {
     remoteMode = true;
   } else if (a === "--port" && args[i + 1]) {
@@ -536,7 +540,7 @@ async function main(): Promise<void> {
   }
 
   // Start UI
-  await startApp(agent, promptText);
+  await startApp(agent, promptText, { showCodeExec, headless });
 }
 
 main().catch((err: Error) => {
