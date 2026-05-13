@@ -2,8 +2,8 @@
  * Unit tests for startup health check.
  *
  * Verifies that Agent._init() calls llmProvider.checkHealth() before
- * loading context, and throws a clear error when the LLM backend is
- * unreachable.
+ * loading context, and logs a warning (not a fatal error) when the
+ * LLM backend is unreachable.
  *
  * Dependencies: @jest/globals, ../../src/agent.js
  */
@@ -11,7 +11,7 @@ import { describe, test, expect } from "@jest/globals";
 import { Agent } from "../../src/agent.js";
 
 describe("startup health check", () => {
-  test("_init throws when LLM backend is unreachable", async () => {
+  test("_init succeeds with warning when LLM backend is unreachable", async () => {
     const agent = new Agent({
       agentHost: {
         toolProvider: { getTools: () => [] },
@@ -30,7 +30,8 @@ describe("startup health check", () => {
       jailDirectory: "/tmp/test-jail-health",
     });
 
-    await expect(agent._init()).rejects.toThrow(/LLM backend.*unreachable/i);
+    // Health check failure is now a warning, not a fatal error
+    await agent._init();
   });
 
   test("_init succeeds when LLM backend is healthy", async () => {

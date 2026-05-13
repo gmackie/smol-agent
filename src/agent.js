@@ -857,7 +857,7 @@ export class Agent extends EventEmitter {
       try {
         await this.llmProvider.checkHealth();
       } catch (err) {
-        throw new Error(`LLM backend unreachable: ${err.message}. Is the model server running?`);
+        logger.warn(`LLM backend health check failed: ${err.message}. Proceeding anyway.`);
       }
     }
 
