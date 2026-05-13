@@ -41,7 +41,7 @@ import { OpenAICompatibleProvider } from "./openai-compatible.js";
 import { AnthropicProvider } from "./anthropic.js";
 import { CodexCLIProvider } from "./codex-cli.js";
 import type { BaseLLMProvider } from "./base.js";
-import { getRuntimeBaseURL } from "../runtime/request-context.js";
+import { getRuntimeBaseURL, buildRuntimeHeaders } from "../runtime/request-context.js";
 
 export interface ProviderPreset {
   factory: (opts: ProviderOptions) => BaseLLMProvider;
@@ -163,6 +163,21 @@ export function createProvider({
   const rawProvider = provider || process.env.SMOL_AGENT_PROVIDER || "ollama";
   const providerName = rawProvider.toLowerCase();
   const runtimeBaseURL = host || getRuntimeBaseURL(runtimeContext);
+
+  // When a runtime LLM proxy is available and no explicit provider was chosen,
+  // route through the proxy using the OpenAI-compatible provider
+  if (runtimeBaseURL && !provider && !process.env.SMOL_AGENT_PROVIDER) {
+    const runtimeHeaders = buildRuntimeHeaders(runtimeContext || {});
+    const proxyBaseURL = runtimeBaseURL.replace(/\/+$/, "") + "/v1";
+    return new OpenAICompatibleProvider({
+      baseURL: proxyBaseURL,
+      model: model || OLLAMA_DEFAULT_MODEL,
+      apiKey: apiKey || process.env.GENTRELLIS_API_KEY,
+      providerName: "gentrellis",
+      runtimeContext,
+      defaultHeaders: { ...defaultHeaders, ...runtimeHeaders },
+    }) as BaseLLMProvider;
+  }
 
   // Check if it's a known preset (case-insensitive)
   const preset = PROVIDER_PRESETS[providerName];

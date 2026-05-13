@@ -506,7 +506,8 @@ async function main(): Promise<void> {
   const settings = await loadSettings(jailDirectory);
 
   // Provider selection order: CLI arg > settings > env var > default
-  const providerName = provider || (settings.provider as string | undefined) || process.env.SMOL_AGENT_PROVIDER || "ollama";
+  // When using --agent-host, don't default to "ollama" — let createProvider auto-detect
+  const providerName = provider || (settings.provider as string | undefined) || process.env.SMOL_AGENT_PROVIDER || (agentHostUrl ? undefined : "ollama");
   const modelName = model || (settings.model as string | undefined) || process.env.SMOL_AGENT_MODEL;
 
   const contextSize = typeof settings.contextSize === 'number' ? settings.contextSize : undefined;

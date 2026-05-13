@@ -1,4 +1,5 @@
 import { logger } from "../logger.js";
+import * as registry from "../tools/registry.js";
 
 async function apiCall(baseUrl, resourcePath, { method = "GET", body = null, token = null } = {}) {
   const url = `${baseUrl}${resourcePath}`;
@@ -211,12 +212,20 @@ export function createGenTrellisHost({
     },
 
     toolProvider: {
-      getTools: () => {
-        return [...governedTools];
+      getTools: (coreOnly) => {
+        if (governedTools.length > 0) {
+          return [...governedTools];
+        }
+        return registry.getTools(coreOnly);
       },
 
       execute: async (name, args, context) => {
         const isSafe = SAFE_TO_RETRY.has(name);
+
+        const executeLocally = () => {
+          registry.setJailDirectory(context?.cwd);
+          return registry.execute(name, args, context);
+        };
 
         let response;
         for (let attempt = 0; attempt <= (isSafe ? maxRetries : 0); attempt++) {
@@ -235,13 +244,13 @@ export function createGenTrellisHost({
               continue;
             }
 
-            logger.error(`GenTrellis tool execute failed after ${attempt + 1} attempts: ${err.message}`);
-            return { error: `GenTrellis host error: ${err.message}` };
+            logger.warn(`GenTrellis governance unavailable, executing locally: ${err.message}`);
+            return executeLocally();
           }
         }
 
         if (!response) {
-          return { error: "GenTrellis host error: no response from tool execute" };
+          return executeLocally();
         }
 
         // If the tool requires approval, poll until decided
@@ -264,7 +273,7 @@ export function createGenTrellisHost({
 
               if (status.status === "approved") {
                 logger.info(`Tool "${name}" approved (id=${response.approval_id})`);
-                return status.result || { approved: true };
+                return executeLocally();
               }
 
               if (status.status === "denied") {
@@ -280,6 +289,11 @@ export function createGenTrellisHost({
           }
 
           return { error: "Tool approval timed out after 1 hour" };
+        }
+
+        // Governance approved — execute locally
+        if (response.status === "approved") {
+          return executeLocally();
         }
 
         return response;
