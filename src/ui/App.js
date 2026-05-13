@@ -2044,11 +2044,25 @@ async function _runHeadless(agent, prompt) {
   const { setAskHandler } = await import("../tools/ask_user.js");
   setAskHandler(async () => "(headless mode — no interactive input available, proceed with best judgment)");
 
+  // Emit run.start lifecycle event
+  if (agent.host?.eventSink) {
+    agent.host.eventSink.emit({ type: "run.start", body: { prompt: prompt.slice(0, 500) } });
+  }
+
   try {
     await agent._init();
     if (agent._approveAll === undefined) agent._approveAll = true;
     await agent.run(prompt);
+
+    // Emit run.complete lifecycle event
+    if (agent.host?.eventSink) {
+      agent.host.eventSink.emit({ type: "run.complete", body: { response: responseText.slice(0, 1000) } });
+    }
   } catch (err) {
+    // Emit run.failed lifecycle event
+    if (agent.host?.eventSink) {
+      agent.host.eventSink.emit({ type: "run.failed", body: { error: err.message } });
+    }
     process.stderr.write(`Error: ${err.message}\n`);
     process.exit(1);
   }
