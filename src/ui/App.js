@@ -2044,6 +2044,27 @@ async function _runHeadless(agent, prompt) {
   const { setAskHandler } = await import("../tools/ask_user.js");
   setAskHandler(async () => "(headless mode — no interactive input available, proceed with best judgment)");
 
+  // Graceful shutdown on SIGTERM/SIGINT — emit run.cancelled, trigger AbortController,
+  // then force exit after a 5s grace period if the agent doesn't wind down on its own.
+  let shuttingDown = false;
+  const shutdown = (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    process.stderr.write(`\n[${signal}] Shutting down gracefully...\n`);
+    if (agent.host?.eventSink) {
+      agent.host.eventSink.emit({ type: "run.cancelled", body: { reason: signal } });
+    }
+    agent.cancel();
+    // Give the agent 5s to finish, then force exit
+    setTimeout(() => {
+      process.stderr.write("[timeout] Force exit after 5s grace period\n");
+      process.exit(130);
+    }, 5000).unref();
+  };
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
+
   // Emit run.start lifecycle event
   if (agent.host?.eventSink) {
     agent.host.eventSink.emit({ type: "run.start", body: { prompt: prompt.slice(0, 500) } });
