@@ -77,6 +77,7 @@ async function resolveAgentHost(agentHostUrl: string | undefined, jailDirectory:
       baseUrl,
       workflowId,
       token,
+      runId: process.env.GENTRELLIS_RUN_ID ? parseInt(process.env.GENTRELLIS_RUN_ID, 10) : undefined,
     });
     try {
       await resolvedHost.refreshTools();
