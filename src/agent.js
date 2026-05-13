@@ -1402,7 +1402,7 @@ export class Agent extends EventEmitter {
           // Touch the LRU cache so this tool stays active
           this._lruCache.touch(name);
 
-          let result = await registry.execute(name, args, { cwd: this.jailDirectory, eventEmitter: this });
+          let result = await this.host.toolProvider.execute(name, args, { cwd: this.jailDirectory, eventEmitter: this });
 
           // Track consecutive failures
           if (result?.error) {

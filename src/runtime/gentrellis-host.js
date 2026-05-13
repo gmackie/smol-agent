@@ -51,6 +51,7 @@ export function createGenTrellisHost({
   token,
   maxRetries = 3,
   initialTools = [],
+  approvalPollIntervalMs,
 } = {}) {
   if (!baseUrl) {
     throw new Error("GenTrellis host requires a baseUrl");
@@ -61,6 +62,10 @@ export function createGenTrellisHost({
       baseUrl,
       workflowId,
       protectionLevel,
+    },
+    llmHeaders: {
+      ...(workflowId !== undefined ? { "X-Workflow-Id": String(workflowId) } : {}),
+      "X-Protection-Level": protectionLevel,
     },
   };
 
@@ -213,13 +218,15 @@ export function createGenTrellisHost({
       execute: async (name, args, context) => {
         const isSafe = SAFE_TO_RETRY.has(name);
 
+        let response;
         for (let attempt = 0; attempt <= (isSafe ? maxRetries : 0); attempt++) {
           try {
-            return await apiCall(baseUrl, "/api/agents/tools/execute", {
+            response = await apiCall(baseUrl, "/api/agents/tools/execute", {
               method: "POST",
               body: { name, args, context: { cwd: context?.cwd }, workflowId, protectionLevel },
               token,
             });
+            break;
           } catch (err) {
             if (attempt < (isSafe ? maxRetries : 0)) {
               const delay = Math.min(1000 * 2 ** attempt, 10000);
@@ -233,7 +240,49 @@ export function createGenTrellisHost({
           }
         }
 
-        return { error: `GenTrellis host error: tool execution fell through for ${name}` };
+        if (!response) {
+          return { error: "GenTrellis host error: no response from tool execute" };
+        }
+
+        // If the tool requires approval, poll until decided
+        if (response.status === "pending_approval" && response.approval_id) {
+          const pollInterval = approvalPollIntervalMs || 3000;
+          const maxPollTime = 3600000; // 1 hour
+          const start = Date.now();
+
+          logger.info(`Tool "${name}" requires approval (id=${response.approval_id}), waiting...`);
+
+          while (Date.now() - start < maxPollTime) {
+            await new Promise((resolve) => setTimeout(resolve, pollInterval));
+
+            try {
+              const status = await apiCall(
+                baseUrl,
+                `/api/agents/approvals/${response.approval_id}`,
+                { token },
+              );
+
+              if (status.status === "approved") {
+                logger.info(`Tool "${name}" approved (id=${response.approval_id})`);
+                return status.result || { approved: true };
+              }
+
+              if (status.status === "denied") {
+                const reason = status.reason || "denied by operator";
+                logger.info(`Tool "${name}" denied (id=${response.approval_id}): ${reason}`);
+                return { error: `Tool call denied by operator: ${reason}` };
+              }
+
+              // Still pending — continue polling
+            } catch (err) {
+              logger.warn(`Approval poll error (will retry): ${err.message}`);
+            }
+          }
+
+          return { error: "Tool approval timed out after 1 hour" };
+        }
+
+        return response;
       },
     },
 

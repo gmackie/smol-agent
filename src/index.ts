@@ -530,6 +530,10 @@ async function main(): Promise<void> {
     console.warn(`Session ${sessionId} not found. Starting fresh.`);
   }
 
+  if (autoApprove) {
+    agent._approveAll = true;
+  }
+
   // Start UI
   await startApp(agent, promptText);
 }

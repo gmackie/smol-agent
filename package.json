@@ -34,7 +34,7 @@
   },
   "homepage": "https://github.com/smol-ai/smol-agent#readme",
   "scripts": {
-    "start": "tsx src/index.ts",
+    "start": "tsx --env-file=.env src/index.ts",
     "build": "tsc",
     "build:strict": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
