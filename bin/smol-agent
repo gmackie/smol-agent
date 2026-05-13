@@ -1,0 +1,2 @@
+#!/bin/bash
+exec tsx /Volumes/dev/gentrellis/smol-agent/src/index.ts "$@"

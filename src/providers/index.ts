@@ -171,7 +171,7 @@ export function createProvider({
     const proxyBaseURL = runtimeBaseURL.replace(/\/+$/, "") + "/v1";
     return new OpenAICompatibleProvider({
       baseURL: proxyBaseURL,
-      model: model || OLLAMA_DEFAULT_MODEL,
+      model: model || "gentrellis-default",
       apiKey: apiKey || process.env.GENTRELLIS_API_KEY,
       providerName: "gentrellis",
       runtimeContext,
