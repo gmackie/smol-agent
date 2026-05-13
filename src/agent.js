@@ -851,6 +851,15 @@ export class Agent extends EventEmitter {
       }
     }
 
+    // Pre-flight: verify LLM backend is reachable before loading context
+    if (this.llmProvider?.checkHealth) {
+      try {
+        await this.llmProvider.checkHealth();
+      } catch (err) {
+        throw new Error(`LLM backend unreachable: ${err.message}. Is the model server running?`);
+      }
+    }
+
     let contextBlock = "";
     try {
       contextBlock = await gatherContext(this.jailDirectory, this.contextSize);

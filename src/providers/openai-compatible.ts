@@ -398,6 +398,20 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
     };
   }
 
+  /**
+   * Pre-flight health check — verify the OpenAI-compatible server is reachable.
+   * Hits GET /models with a 5-second timeout.
+   */
+  async checkHealth(): Promise<boolean> {
+    const url = `${this.baseURL}/models`;
+    const response = await fetch(url, {
+      headers: this.defaultHeaders,
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) throw new Error(`LLM backend returned ${response.status}`);
+    return true;
+  }
+
   async listModels(): Promise<string[]> {
     try {
       const resp = await fetch(`${this.baseURL}/models`, {

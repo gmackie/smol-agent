@@ -186,6 +186,17 @@ export class OllamaProvider extends BaseLLMProvider {
     };
   }
 
+  /**
+   * Pre-flight health check — verify the Ollama server is reachable.
+   * Hits GET /api/tags with a 5-second timeout.
+   */
+  async checkHealth(): Promise<boolean> {
+    const url = `${this.host}/api/tags`;
+    const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!response.ok) throw new Error(`LLM backend returned ${response.status}`);
+    return true;
+  }
+
   async listModels(): Promise<string[]> {
     try {
       const response = await this.client.list();
