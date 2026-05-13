@@ -13,6 +13,76 @@ function makeTool(name, description = `${name} description`) {
   };
 }
 
+describe("GenTrellisHost eventSink", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    jest.restoreAllMocks();
+  });
+
+  it("posts events to run-specific endpoint with correct payload", async () => {
+    const fetchCalls = [];
+    global.fetch = jest.fn(async (url, opts) => {
+      fetchCalls.push({ url, opts });
+      return {
+        ok: true,
+        headers: { get: () => "application/json" },
+        json: async () => ({ status: "accepted" }),
+      };
+    });
+
+    const host = createGenTrellisHost({
+      baseUrl: "http://localhost:8080",
+      runId: 42,
+      token: "test-token",
+    });
+
+    host.eventSink.emit({
+      type: "tool.call.started",
+      body: { name: "write_file", args: { filePath: "test.txt" } },
+    });
+
+    // Give the fire-and-forget promise a tick to resolve
+    await new Promise((r) => setTimeout(r, 50));
+
+    const call = fetchCalls.find((c) => c.url.includes("/events"));
+    expect(call).toBeDefined();
+    expect(call.url).toBe(
+      "http://localhost:8080/api/admin/agents/runs/42/events",
+    );
+    const body = JSON.parse(call.opts.body);
+    expect(body).toMatchObject({
+      type: "tool.call.started",
+      body: { name: "write_file" },
+    });
+    expect(body.sender).toBe("smol-agent");
+    expect(call.opts.headers.Authorization).toBe("Bearer test-token");
+  });
+
+  it("skips event posting when runId is not set", async () => {
+    const fetchCalls = [];
+    global.fetch = jest.fn(async (url, opts) => {
+      fetchCalls.push({ url, opts });
+      return {
+        ok: true,
+        headers: { get: () => "application/json" },
+        json: async () => ({ status: "accepted" }),
+      };
+    });
+
+    const host = createGenTrellisHost({
+      baseUrl: "http://localhost:8080",
+    });
+
+    host.eventSink.emit({ type: "tool.call.started", body: {} });
+    await new Promise((r) => setTimeout(r, 50));
+
+    const call = fetchCalls.find((c) => c.url.includes("/events"));
+    expect(call).toBeUndefined();
+  });
+});
+
 describe("GenTrellisHost tool governance", () => {
   const originalFetch = global.fetch;
   const originalRegistry = globalThis.__smolAgentRegistry;

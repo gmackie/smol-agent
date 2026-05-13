@@ -53,6 +53,7 @@ export function createGenTrellisHost({
   maxRetries = 3,
   initialTools = [],
   approvalPollIntervalMs,
+  runId,
 } = {}) {
   if (!baseUrl) {
     throw new Error("GenTrellis host requires a baseUrl");
@@ -303,9 +304,18 @@ export function createGenTrellisHost({
     eventSink: {
       emit: (event) => {
         eventLog.push(event);
-        apiCall(baseUrl, "/api/agents/events", {
+        if (!runId) {
+          logger.debug("eventSink: no runId, skipping remote post");
+          return;
+        }
+        apiCall(baseUrl, `/api/admin/agents/runs/${runId}/events`, {
           method: "POST",
-          body: event,
+          body: {
+            type: event.type || "tool.call.started",
+            event_id: event.event_id || undefined,
+            sender: event.sender || "smol-agent",
+            body: event.body || event,
+          },
           token,
         }).catch((err) => {
           logger.debug(`GenTrellis event post failed (non-blocking): ${err.message}`);
