@@ -1399,6 +1399,12 @@ export class Agent extends EventEmitter {
           if (failures >= MAX_TOOL_FAILURES) {
             const msg = `Tool "${name}" has failed ${failures} times consecutively. Try a different approach.`;
             this.emit("tool_result", { name, result: { error: msg } });
+            if (this.host?.eventSink) {
+              this.host.eventSink.emit({
+                type: "tool.call.completed",
+                body: { name, result: JSON.stringify({ error: msg }).slice(0, 500) },
+              });
+            }
             return { error: msg };
           }
 
@@ -1429,6 +1435,12 @@ export class Agent extends EventEmitter {
 
           // Emit with _display attached so the UI can render a diff
           this.emit("tool_result", { name, result: display ? { ...result, _display: display } : result });
+          if (this.host?.eventSink) {
+            this.host.eventSink.emit({
+              type: "tool.call.completed",
+              body: { name, result: JSON.stringify(result).slice(0, 500) },
+            });
+          }
 
           return result;
         };
@@ -1441,7 +1453,19 @@ export class Agent extends EventEmitter {
           for (const tc of uniqueToolCalls) {
             const skipResult = { skipped: true, reason: "User sent a new message" };
             this.emit("tool_call", { name: tc.function.name, args: tc.function.arguments });
+            if (this.host?.eventSink) {
+              this.host.eventSink.emit({
+                type: "tool.call.started",
+                body: { name: tc.function.name, args: JSON.stringify(tc.function.arguments).slice(0, 500) },
+              });
+            }
             this.emit("tool_result", { name: tc.function.name, result: skipResult });
+            if (this.host?.eventSink) {
+              this.host.eventSink.emit({
+                type: "tool.call.completed",
+                body: { name: tc.function.name, result: JSON.stringify(skipResult).slice(0, 500) },
+              });
+            }
             this.messages.push({ role: "tool", content: JSON.stringify(skipResult) });
           }
           this._flushPendingInjections();
@@ -1467,6 +1491,12 @@ export class Agent extends EventEmitter {
             const name = tc.function.name;
             const args = tc.function.arguments;
             this.emit("tool_call", { name, args });
+            if (this.host?.eventSink) {
+              this.host.eventSink.emit({
+                type: "tool.call.started",
+                body: { name, args: JSON.stringify(args).slice(0, 500) },
+              });
+            }
 
             // Request approval for dangerous tools (respects per-category approvals)
             const toolCategory = registry.getToolCategory(name);
@@ -1484,6 +1514,12 @@ export class Agent extends EventEmitter {
               if (!decision.approved) {
                 const err = { error: "User denied this action. Try a different approach or ask the user for guidance." };
                 this.emit("tool_result", { name, result: err });
+                if (this.host?.eventSink) {
+                  this.host.eventSink.emit({
+                    type: "tool.call.completed",
+                    body: { name, result: JSON.stringify(err).slice(0, 500) },
+                  });
+                }
                 results.push(err);
                 continue;
               }
@@ -1500,7 +1536,19 @@ export class Agent extends EventEmitter {
               for (let i = results.length; i < uniqueToolCalls.length; i++) {
                 const skipResult = { skipped: true, reason: "User sent a new message" };
                 this.emit("tool_call", { name: uniqueToolCalls[i].function.name, args: uniqueToolCalls[i].function.arguments });
+                if (this.host?.eventSink) {
+                  this.host.eventSink.emit({
+                    type: "tool.call.started",
+                    body: { name: uniqueToolCalls[i].function.name, args: JSON.stringify(uniqueToolCalls[i].function.arguments).slice(0, 500) },
+                  });
+                }
                 this.emit("tool_result", { name: uniqueToolCalls[i].function.name, result: skipResult });
+                if (this.host?.eventSink) {
+                  this.host.eventSink.emit({
+                    type: "tool.call.completed",
+                    body: { name: uniqueToolCalls[i].function.name, result: JSON.stringify(skipResult).slice(0, 500) },
+                  });
+                }
                 results.push(skipResult);
               }
               break;
@@ -1511,6 +1559,12 @@ export class Agent extends EventEmitter {
           results = await Promise.all(
             uniqueToolCalls.map(async (tc) => {
               this.emit("tool_call", { name: tc.function.name, args: tc.function.arguments });
+              if (this.host?.eventSink) {
+                this.host.eventSink.emit({
+                  type: "tool.call.started",
+                  body: { name: tc.function.name, args: JSON.stringify(tc.function.arguments).slice(0, 500) },
+                });
+              }
               return executeSingleTool(tc);
             }),
           );
