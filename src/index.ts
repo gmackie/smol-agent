@@ -58,7 +58,7 @@ const GLOBAL_CONFIG_DIR = path.join(XDG_CONFIG_HOME, "smol-agent");
 // Free tiktoken WASM resources on exit
 process.on("exit", () => { cleanupTiktoken().catch(() => {}); });
 
-async function resolveAgentHost(agentHostUrl: string | undefined, jailDirectory: string) {
+async function resolveAgentHost(agentHostUrl: string | undefined, jailDirectory: string, options: { runId?: number; apiKey?: string } = {}) {
   if (!agentHostUrl) {
     return createLocalHost({ jailDirectory });
   }
@@ -69,15 +69,16 @@ async function resolveAgentHost(agentHostUrl: string | undefined, jailDirectory:
     const workflowId = match[3] ? parseInt(match[3], 10) : undefined;
     const protocol = hostPort.includes("localhost") || hostPort.includes("127.0.0.1") ? "http" : "https";
     const baseUrl = `${protocol}://${hostPort}`;
-    const token = process.env.GENTRELLIS_API_KEY || undefined;
+    const token = options.apiKey || process.env.GENTRELLIS_API_KEY || undefined;
+    const resolvedRunId = options.runId || (process.env.GENTRELLIS_RUN_ID ? parseInt(process.env.GENTRELLIS_RUN_ID, 10) : undefined);
 
-    console.log(`Connecting to GenTrellis host: ${baseUrl}${workflowId ? ` (workflow ${workflowId})` : ""}`);
+    console.log(`Connecting to GenTrellis host: ${baseUrl}${workflowId ? ` (workflow ${workflowId})` : ""}${resolvedRunId ? ` (run ${resolvedRunId})` : ""}`);
 
     const resolvedHost = createGenTrellisHost({
       baseUrl,
       workflowId,
       token,
-      runId: process.env.GENTRELLIS_RUN_ID ? parseInt(process.env.GENTRELLIS_RUN_ID, 10) : undefined,
+      runId: resolvedRunId,
     });
     try {
       await resolvedHost.refreshTools();
@@ -275,6 +276,7 @@ let remotePort = undefined;     // --port <n> for remote server port
 let remoteListenHost = undefined; // --listen <host> for remote server bind address
 let authToken = undefined;      // --auth-token <token> for remote server auth
 let agentHostUrl: string | undefined = undefined;
+let runId: number | undefined = undefined;
 let commandName: string | undefined = undefined;
 let commandArgs: string[] = [];
 
@@ -347,6 +349,12 @@ for (let i = 0; i < args.length; i++) {
     authToken = args[++i];
   } else if (a === "--agent-host" && args[i + 1]) {
     agentHostUrl = args[++i];
+  } else if (a === "--run-id" && args[i + 1]) {
+    runId = parseInt(args[++i], 10);
+    if (!Number.isFinite(runId) || runId <= 0) {
+      console.error("Error: --run-id must be a positive integer");
+      process.exit(1);
+    }
   } else if (a === "--self-update") {
     runSelfUpdate();
   } else if (a === "--help") {
@@ -516,7 +524,7 @@ async function main(): Promise<void> {
   const modelName = model || (settings.model as string | undefined) || process.env.SMOL_AGENT_MODEL;
 
   const contextSize = typeof settings.contextSize === 'number' ? settings.contextSize : undefined;
-  const resolvedHost = await resolveAgentHost(agentHostUrl, jailDirectory);
+  const resolvedHost = await resolveAgentHost(agentHostUrl, jailDirectory, { runId, apiKey });
 
   const { agent, resumed } = await createInteractiveAgent({
     jailDirectory,

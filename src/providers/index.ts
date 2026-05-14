@@ -184,10 +184,12 @@ export function createProvider({
   if (preset) {
     const key =
       apiKey || (preset.envKey ? (process.env[preset.envKey] as string | undefined) : null);
+    // When an explicit provider is chosen, only use --host to override the base URL.
+    // Don't let the runtime proxy URL leak into provider-specific endpoints.
     return preset.factory({
       model: model || preset.defaultModel,
       host,
-      baseURL: runtimeBaseURL,
+      baseURL: host || undefined,
       apiKey: key,
       cwd,
       programmaticToolCalling,
