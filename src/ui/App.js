@@ -2083,6 +2083,7 @@ async function _runHeadless(agent, prompt) {
     // Emit run.failed lifecycle event
     if (agent.host?.eventSink) {
       agent.host.eventSink.emit({ type: "run.failed", body: { error: err.message } });
+      if (agent.host.eventSink.flush) await agent.host.eventSink.flush();
     }
     process.stderr.write(`Error: ${err.message}\n`);
     process.exit(1);
@@ -2091,6 +2092,11 @@ async function _runHeadless(agent, prompt) {
   if (responseText) {
     process.stdout.write(responseText);
     if (!responseText.endsWith("\n")) process.stdout.write("\n");
+  }
+
+  // Flush pending events before exit
+  if (agent.host?.eventSink?.flush) {
+    await agent.host.eventSink.flush();
   }
   process.exit(0);
 }

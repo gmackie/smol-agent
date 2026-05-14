@@ -277,6 +277,8 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
     let promptTokens = 0;
     let completionTokens = 0;
 
+    let yieldedTokens = false;
+
     try {
       while (true) {
         const { done, value } = await reader.read();
@@ -300,6 +302,7 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
           const delta = choice.delta;
           if (delta?.content) {
             yield { type: "token", content: delta.content };
+            yieldedTokens = true;
           }
 
           // Accumulate streamed tool calls
@@ -325,6 +328,36 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
       }
     } finally {
       reader.releaseLock();
+    }
+
+    // Fallback: server returned a non-streaming JSON response despite stream:true.
+    // Parse the accumulated buffer as a regular completion response.
+    if (!yieldedTokens && toolCallsById.size === 0 && buffer.trim()) {
+      try {
+        const fullResponse = JSON.parse(buffer.trim()) as {
+          choices?: Array<{ message?: { content?: string; tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }> } }>;
+          usage?: { prompt_tokens?: number; completion_tokens?: number };
+        };
+        const msg = fullResponse.choices?.[0]?.message;
+        if (msg?.content) {
+          yield { type: "token", content: msg.content };
+        }
+        if (msg?.tool_calls) {
+          for (let i = 0; i < msg.tool_calls.length; i++) {
+            const tc = msg.tool_calls[i];
+            toolCallsById.set(i, {
+              id: tc.id || null,
+              function: { name: tc.function?.name || "", arguments: tc.function?.arguments || "" },
+            });
+          }
+        }
+        if (fullResponse.usage) {
+          promptTokens = fullResponse.usage.prompt_tokens || 0;
+          completionTokens = fullResponse.usage.completion_tokens || 0;
+        }
+      } catch {
+        // Not valid JSON — ignore
+      }
     }
 
     // Parse accumulated tool call arguments — always produce an object

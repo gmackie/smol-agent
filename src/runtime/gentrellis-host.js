@@ -304,27 +304,32 @@ export function createGenTrellisHost({
       },
     },
 
-    eventSink: {
-      emit: (event) => {
-        eventLog.push(event);
-        if (!runId) {
-          logger.debug("eventSink: no runId, skipping remote post");
-          return;
-        }
-        apiCall(baseUrl, `/api/admin/agents/runs/${runId}/events`, {
-          method: "POST",
-          body: {
-            type: event.type || "tool.call.started",
-            ...(event.event_id ? { event_id: event.event_id } : {}),
-            sender: event.sender || "smol-agent",
-            body: event.body || {},
-          },
-          token,
-        }).catch((err) => {
-          logger.debug(`GenTrellis event post failed (non-blocking): ${err.message}`);
-        });
-      },
-    },
+    eventSink: (() => {
+      const pendingEvents = [];
+      return {
+        emit: (event) => {
+          eventLog.push(event);
+          if (!runId) {
+            logger.debug("eventSink: no runId, skipping remote post");
+            return;
+          }
+          const p = apiCall(baseUrl, `/api/admin/agents/runs/${runId}/events`, {
+            method: "POST",
+            body: {
+              type: event.type || "tool.call.started",
+              ...(event.event_id ? { event_id: event.event_id } : {}),
+              sender: event.sender || "smol-agent",
+              body: event.body || {},
+            },
+            token,
+          }).catch((err) => {
+            logger.debug(`GenTrellis event post failed (non-blocking): ${err.message}`);
+          });
+          pendingEvents.push(p);
+        },
+        flush: () => Promise.allSettled(pendingEvents).then(() => { pendingEvents.length = 0; }),
+      };
+    })(),
 
     getEventLog: () => [...eventLog],
     clearEventLog: () => {
